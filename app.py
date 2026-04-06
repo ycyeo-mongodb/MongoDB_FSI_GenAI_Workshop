@@ -4,7 +4,9 @@ Full FastAPI application for the banking GenAI workshop.
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -81,6 +83,28 @@ def call_llm(messages: List[dict[str, str]], llm_url: str, temperature: float = 
     if "error" in data:
         raise HTTPException(status_code=502, detail=f"LLM API error: {data['error']}")
     return (data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
+
+
+def call_llm_debug(messages: List[dict[str, str]], llm_url: str) -> dict[str, Any]:
+    """Like call_llm but returns the full payload for pipeline transparency."""
+    payload = {"messages": messages}
+    t0 = time.time()
+    try:
+        resp = requests.post(llm_url, json=payload, timeout=55)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"LLM API request failed: {exc}") from exc
+    latency_ms = round((time.time() - t0) * 1000)
+    data = resp.json()
+    if "error" in data:
+        raise HTTPException(status_code=502, detail=f"LLM API error: {data['error']}")
+    answer = (data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
+    return {
+        "answer": answer,
+        "model": data.get("model", ""),
+        "usage": data.get("usage", {}),
+        "latency_ms": latency_ms,
+    }
 
 
 def get_query_embedding(voyage_client: voyageai.Client, text: str) -> List[float]:
@@ -250,7 +274,9 @@ async def api_faq(
     llm_url: str = request.app.state.llm_url
     faq_coll: Collection[Any] = request.app.state.faq_chunks
 
+    t_embed_start = time.time()
     query_vector = get_query_embedding(voyage_client, q)
+    embed_ms = round((time.time() - t_embed_start) * 1000)
 
     pipeline: List[dict[str, Any]] = [
         {
@@ -266,7 +292,10 @@ async def api_faq(
         {"$project": {EMBEDDING_FIELD: 0}},
     ]
 
+    t_search_start = time.time()
     raw_chunks = list(faq_coll.aggregate(pipeline))
+    search_ms = round((time.time() - t_search_start) * 1000)
+
     sources: List[dict[str, Any]] = []
     context_blocks: List[str] = []
     for doc in raw_chunks:
@@ -296,15 +325,46 @@ async def api_faq(
     )
     user_prompt = f"Context:\n{context}\n\nQuestion:\n{q}"
 
-    answer = call_llm(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        llm_url,
-    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    llm_result = call_llm_debug(messages, llm_url)
 
-    return {"query": q, "answer": answer, "sources": sources}
+    pipeline_readable = [
+        {"$vectorSearch": {"index": FAQ_VECTOR_INDEX, "path": EMBEDDING_FIELD, "queryVector": f"<{len(query_vector)}-dim float array>", "numCandidates": min(200, max(50, limit * 20)), "limit": limit}},
+        {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
+        {"$project": {EMBEDDING_FIELD: 0}},
+    ]
+
+    return {
+        "query": q,
+        "answer": llm_result["answer"],
+        "sources": sources,
+        "debug": {
+            "embedding": {
+                "model": VOYAGE_EMBED_MODEL,
+                "dimensions": len(query_vector),
+                "input_type": "query",
+                "latency_ms": embed_ms,
+            },
+            "vector_search": {
+                "index": FAQ_VECTOR_INDEX,
+                "collection": "banking.faq_chunks",
+                "pipeline": pipeline_readable,
+                "results_returned": len(raw_chunks),
+                "latency_ms": search_ms,
+            },
+            "llm": {
+                "endpoint": llm_url,
+                "model": llm_result["model"],
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "usage": llm_result["usage"],
+                "latency_ms": llm_result["latency_ms"],
+            },
+        },
+    }
 
 
 @app.get("/api/credit-score")
@@ -549,4 +609,50 @@ async def api_recommend_products(
         )
 
     return {"customer_id": customer_id, "recommendations": recs}
+
+
+# ──────────────────────────────────────────────────────────
+# Debug: Lambda / CloudWatch Logs
+# ──────────────────────────────────────────────────────────
+
+@app.get("/api/debug/lambda-logs")
+async def api_lambda_logs(
+    minutes: int = Query(10, ge=1, le=60),
+    limit: int = Query(30, ge=1, le=100),
+) -> dict[str, Any]:
+    """Fetch recent CloudWatch log events from the fsi_workshop Lambda."""
+    try:
+        import boto3
+    except ImportError:
+        raise HTTPException(status_code=501, detail="boto3 not installed — add it to requirements.txt")
+
+    log_group = "/aws/lambda/fsi_workshop"
+    start_ms = int((time.time() - minutes * 60) * 1000)
+
+    try:
+        cw = boto3.client("logs", region_name="us-east-1")
+        resp = cw.filter_log_events(
+            logGroupName=log_group,
+            startTime=start_ms,
+            limit=limit,
+            interleaved=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"CloudWatch error: {exc}")
+
+    events = []
+    for ev in resp.get("events", []):
+        msg = ev.get("message", "").strip()
+        if not msg or msg.startswith("REPORT") or msg.startswith("END") or msg.startswith("START"):
+            continue
+        events.append({
+            "timestamp": ev.get("timestamp"),
+            "message": msg,
+        })
+
+    return {
+        "log_group": log_group,
+        "last_minutes": minutes,
+        "events": events,
+    }
 

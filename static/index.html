@@ -173,8 +173,9 @@ tr:hover{background:var(--surface)}
   position:fixed;bottom:96px;right:24px;width:400px;height:540px;
   background:var(--card);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.2);
   z-index:999;display:none;flex-direction:column;overflow:hidden;
-  border:1px solid var(--border);
+  border:1px solid var(--border);transition:width .3s,height .3s;
 }
+.chatbot-panel.pipeline-on{width:620px;height:80vh}
 .chatbot-panel.visible{display:flex}
 .chatbot-panel .chat-header{
   background:linear-gradient(135deg,var(--primary) 0%,var(--primary-light) 100%);
@@ -464,6 +465,9 @@ tr:hover{background:var(--surface)}
   <div class="chat-header">
     <div class="status-dot"></div>
     Atlas Bank Assistant
+    <label style="margin-left:auto;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;opacity:.85">
+      <input type="checkbox" id="pipelineToggle" style="accent-color:var(--accent)"> Show AI Pipeline
+    </label>
   </div>
   <div class="chat-messages" id="chatMessages">
     <div class="chat-msg bot">
@@ -741,6 +745,12 @@ function toggleChat() {
   fab.classList.toggle('open', chatOpen);
   if (chatOpen) $('chatInput').focus();
 }
+document.addEventListener('DOMContentLoaded', () => {
+  const tog = $('pipelineToggle');
+  if (tog) tog.addEventListener('change', () => {
+    $('chatPanel').classList.toggle('pipeline-on', tog.checked);
+  });
+});
 
 function appendMsg(text, role, sourcesHtml) {
   const wrap = $('chatMessages');
@@ -762,6 +772,32 @@ function showTyping() {
 }
 function hideTyping() { $('typingIndicator')?.remove(); }
 
+function renderPipelineDebug(d) {
+  const em = d.embedding || {};
+  const vs = d.vector_search || {};
+  const llm = d.llm || {};
+  const usage = llm.usage || {};
+  const pipeJson = JSON.stringify(vs.pipeline || [], null, 2);
+  const promptPreview = (llm.user_prompt || '').length > 600
+    ? llm.user_prompt.substring(0, 600) + '…'
+    : (llm.user_prompt || '');
+  return `<div style="margin-top:8px;padding:10px;background:#0d1117;color:#c9d1d9;border-radius:8px;font-size:11px;line-height:1.6;overflow-x:auto;max-height:340px;overflow-y:auto">
+    <div style="color:#58a6ff;font-weight:700;margin-bottom:6px">🔍 AI Pipeline Transparency</div>
+    <div style="color:#f0883e;font-weight:600;margin-top:6px">① Embedding (Voyage AI)</div>
+    <div>Model: <span style="color:#7ee787">${em.model||'?'}</span> | Dimensions: <span style="color:#7ee787">${em.dimensions||'?'}</span> | input_type: <span style="color:#7ee787">${em.input_type||'?'}</span> | Latency: <span style="color:#7ee787">${em.latency_ms||'?'}ms</span></div>
+    <div style="color:#f0883e;font-weight:600;margin-top:8px">② Atlas Vector Search (MongoDB)</div>
+    <div>Index: <span style="color:#7ee787">${vs.index||'?'}</span> | Collection: <span style="color:#7ee787">${vs.collection||'?'}</span> | Results: <span style="color:#7ee787">${vs.results_returned||0}</span> | Latency: <span style="color:#7ee787">${vs.latency_ms||'?'}ms</span></div>
+    <pre style="background:#161b22;padding:6px;border-radius:4px;margin:4px 0;white-space:pre-wrap;word-break:break-all;color:#c9d1d9">${pipeJson}</pre>
+    <div style="color:#f0883e;font-weight:600;margin-top:8px">③ LLM Generation (Amazon Bedrock)</div>
+    <div>Model: <span style="color:#7ee787">${llm.model||'?'}</span> | Endpoint: <span style="color:#7ee787">${llm.endpoint||'?'}</span> | Latency: <span style="color:#7ee787">${llm.latency_ms||'?'}ms</span></div>
+    <div>Tokens — input: <span style="color:#7ee787">${usage.input_tokens||'?'}</span> | output: <span style="color:#7ee787">${usage.output_tokens||'?'}</span></div>
+    <div style="color:#8b949e;font-weight:600;margin-top:6px">System prompt:</div>
+    <pre style="background:#161b22;padding:6px;border-radius:4px;margin:4px 0;white-space:pre-wrap;word-break:break-all;color:#c9d1d9">${llm.system_prompt||''}</pre>
+    <div style="color:#8b949e;font-weight:600;margin-top:6px">User prompt (context + question):</div>
+    <pre style="background:#161b22;padding:6px;border-radius:4px;margin:4px 0;white-space:pre-wrap;word-break:break-all;color:#c9d1d9">${promptPreview}</pre>
+  </div>`;
+}
+
 async function sendChat() {
   const input = $('chatInput');
   const q = input.value.trim();
@@ -779,6 +815,10 @@ async function sendChat() {
       srcHtml = '<strong>Sources:</strong> ' + data.sources.slice(0, 3).map(s =>
         s.title + ' <em>(' + (s.score ? (s.score * 100).toFixed(1) + '%' : '—') + ')</em>'
       ).join(', ');
+    }
+    const showPipeline = $('pipelineToggle') && $('pipelineToggle').checked;
+    if (showPipeline && data.debug) {
+      srcHtml += renderPipelineDebug(data.debug);
     }
     appendMsg(data.answer || 'Sorry, I could not find an answer.', 'bot', srcHtml);
   } catch (e) {
