@@ -300,7 +300,7 @@ def step_load_products(db, voyage: voyageai.Client) -> None:
     vectors = result.embeddings
 
     docs = []
-    for prod, vec in zip(BANK_PRODUCTS, vectors, strict=True):
+    for prod, vec in zip(BANK_PRODUCTS, vectors):
         docs.append(
             {
                 "product_id": prod["product_id"],
@@ -327,7 +327,7 @@ def step_load_kyc(db, voyage: voyageai.Client) -> None:
     docs = load_json("kyc_documents.json")
     descriptions = [d.get("description") or "" for d in docs]
     embeddings = embed_batch(voyage, descriptions)
-    for doc, vec in zip(docs, embeddings, strict=True):
+    for doc, vec in zip(docs, embeddings):
         doc["description_embedding"] = vec
         doc["embedding_model"] = VOYAGE_MODEL
 
