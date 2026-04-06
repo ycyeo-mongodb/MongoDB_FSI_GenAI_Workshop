@@ -612,19 +612,19 @@ async def api_recommend_products(
 
 
 # ──────────────────────────────────────────────────────────
-# Debug: Lambda / CloudWatch Logs
+# Debug: CloudWatch Lambda Logs + Bedrock evidence
 # ──────────────────────────────────────────────────────────
 
 @app.get("/api/debug/lambda-logs")
 async def api_lambda_logs(
     minutes: int = Query(10, ge=1, le=60),
-    limit: int = Query(30, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=200),
 ) -> dict[str, Any]:
-    """Fetch recent CloudWatch log events from the fsi_workshop Lambda."""
+    """Fetch recent BEDROCK_REQUEST / BEDROCK_RESPONSE logs from CloudWatch."""
     try:
         import boto3
     except ImportError:
-        raise HTTPException(status_code=501, detail="boto3 not installed — add it to requirements.txt")
+        raise HTTPException(status_code=501, detail="boto3 not installed")
 
     log_group = "/aws/lambda/fsi_workshop"
     start_ms = int((time.time() - minutes * 60) * 1000)
@@ -640,19 +640,33 @@ async def api_lambda_logs(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"CloudWatch error: {exc}")
 
-    events = []
+    raw_events = []
+    bedrock_events = []
     for ev in resp.get("events", []):
         msg = ev.get("message", "").strip()
-        if not msg or msg.startswith("REPORT") or msg.startswith("END") or msg.startswith("START"):
+        if not msg:
             continue
-        events.append({
-            "timestamp": ev.get("timestamp"),
-            "message": msg,
-        })
+        ts = ev.get("timestamp")
+        if msg.startswith("REPORT"):
+            parts = msg.split("\t")
+            raw_events.append({"timestamp": ts, "type": "REPORT", "message": msg})
+            continue
+        if msg.startswith(("START", "END", "INIT_START")):
+            continue
+        try:
+            parsed = json.loads(msg.split("\t")[-1] if "\t" in msg else msg)
+            if isinstance(parsed, dict) and parsed.get("event", "").startswith("BEDROCK_"):
+                parsed["_timestamp"] = ts
+                bedrock_events.append(parsed)
+                continue
+        except (json.JSONDecodeError, IndexError):
+            pass
+        raw_events.append({"timestamp": ts, "type": "LOG", "message": msg[:500]})
 
     return {
         "log_group": log_group,
         "last_minutes": minutes,
-        "events": events,
+        "bedrock_events": bedrock_events,
+        "raw_events": raw_events,
     }
 
