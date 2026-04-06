@@ -1,0 +1,344 @@
+[
+  {
+    "id": "KYC-00001",
+    "customer_id": "CUST-00032",
+    "document_type": "national_id",
+    "document_number": "DOC266071001",
+    "issue_date": "2019-03-01",
+    "expiry_date": "2027-09-10",
+    "description": "Scanned front of Cambodian national identity card; photo, DOB, and Phnom Penh residential address visible.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00002",
+    "customer_id": "CUST-00036",
+    "document_type": "national_id",
+    "document_number": "DOC218972002",
+    "issue_date": "2022-02-05",
+    "expiry_date": "2029-05-19",
+    "description": "Passport biodata page; holder born in Battambang; machine-readable zone legible; issued 2021.",
+    "verification_status": "pending",
+    "risk_flags": [
+      "name_mismatch_minor"
+    ]
+  },
+  {
+    "id": "KYC-00003",
+    "customer_id": "CUST-00008",
+    "document_type": "passport",
+    "document_number": "DOC535673003",
+    "issue_date": "2021-10-17",
+    "expiry_date": "2030-10-22",
+    "description": "Driver license Class B; expiry 2028; residential address listed as Siem Reap province.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00004",
+    "customer_id": "CUST-00031",
+    "document_type": "passport",
+    "document_number": "DOC728492004",
+    "issue_date": "2021-07-24",
+    "expiry_date": "2029-08-24",
+    "description": "EDC electricity bill for March; customer name, meter ID, and Tuol Kork service address shown.",
+    "verification_status": "flagged",
+    "risk_flags": [
+      "name_mismatch_minor"
+    ]
+  },
+  {
+    "id": "KYC-00005",
+    "customer_id": "CUST-00048",
+    "document_type": "passport",
+    "document_number": "DOC535098005",
+    "issue_date": "2023-11-05",
+    "expiry_date": "2029-03-25",
+    "description": "National ID card scan; photo left, DOB 15/03/1988, address St. 271 Phnom Penh.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00006",
+    "customer_id": "CUST-00033",
+    "document_type": "drivers_license",
+    "document_number": "DOC715448006",
+    "issue_date": "2023-08-08",
+    "expiry_date": "2028-08-11",
+    "description": "National ID card scan; photo left, DOB 15/03/1988, address St. 271 Phnom Penh.",
+    "verification_status": "flagged",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00007",
+    "customer_id": "CUST-00043",
+    "document_type": "utility_bill",
+    "document_number": "DOC448588007",
+    "issue_date": "2023-11-08",
+    "expiry_date": "2024-02-06",
+    "description": "Bank statement PDF pages 1–3; recurring salary credits and monthly utility debits highlighted.",
+    "verification_status": "flagged",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00008",
+    "customer_id": "CUST-00049",
+    "document_type": "bank_statement",
+    "document_number": "DOC831380008",
+    "issue_date": "2021-02-11",
+    "expiry_date": "2021-05-12",
+    "description": "Water authority bill; subscriber name matches KYC; Chbar Ampov branch payment stamp present.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00009",
+    "customer_id": "CUST-00037",
+    "document_type": "utility_bill",
+    "document_number": "DOC880879009",
+    "issue_date": "2020-04-23",
+    "expiry_date": "2020-07-22",
+    "description": "National ID rear side; barcode and fingerprint notation visible; slight edge crop on scan.",
+    "verification_status": "pending",
+    "risk_flags": [
+      "expiry_within_90_days"
+    ]
+  },
+  {
+    "id": "KYC-00010",
+    "customer_id": "CUST-00046",
+    "document_type": "utility_bill",
+    "document_number": "DOC259493010",
+    "issue_date": "2021-03-01",
+    "expiry_date": "2021-05-30",
+    "description": "Passport entry/exit stamps for Thailand and Vietnam; consistent with stated travel history.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00011",
+    "customer_id": "CUST-00003",
+    "document_type": "passport",
+    "document_number": "DOC986088011",
+    "issue_date": "2021-10-25",
+    "expiry_date": "2030-02-13",
+    "description": "Driver license renewal receipt attached; old card number cross-referenced in notes.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00012",
+    "customer_id": "CUST-00007",
+    "document_type": "bank_statement",
+    "document_number": "DOC786587012",
+    "issue_date": "2021-07-24",
+    "expiry_date": "2021-10-22",
+    "description": "Bank statement Q2; large inbound wire annotated as family remittance from abroad.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00013",
+    "customer_id": "CUST-00005",
+    "document_type": "utility_bill",
+    "document_number": "DOC781403013",
+    "issue_date": "2023-05-20",
+    "expiry_date": "2023-08-18",
+    "description": "Utility bill PPWSA; account number ends in 7742; billing period February.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00014",
+    "customer_id": "CUST-00022",
+    "document_type": "bank_statement",
+    "document_number": "DOC611650014",
+    "issue_date": "2021-02-17",
+    "expiry_date": "2021-05-18",
+    "description": "National ID; hologram glare on upper right; DOB and commune of birth readable.",
+    "verification_status": "flagged",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00015",
+    "customer_id": "CUST-00003",
+    "document_type": "bank_statement",
+    "document_number": "DOC338536015",
+    "issue_date": "2019-05-21",
+    "expiry_date": "2019-08-19",
+    "description": "EDC electricity bill dated last month; subscriber Sok Channary; Tuol Kork district.",
+    "verification_status": "flagged",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00016",
+    "customer_id": "CUST-00006",
+    "document_type": "utility_bill",
+    "document_number": "DOC565230016",
+    "issue_date": "2019-07-21",
+    "expiry_date": "2019-10-19",
+    "description": "EDC electricity bill dated last month; subscriber Sok Channary; Tuol Kork district.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00017",
+    "customer_id": "CUST-00045",
+    "document_type": "drivers_license",
+    "document_number": "DOC475876017",
+    "issue_date": "2019-03-01",
+    "expiry_date": "2024-06-01",
+    "description": "Passport; child dependent listed in remarks; guardian consent form on file.",
+    "verification_status": "pending",
+    "risk_flags": [
+      "expiry_within_90_days"
+    ]
+  },
+  {
+    "id": "KYC-00018",
+    "customer_id": "CUST-00028",
+    "document_type": "passport",
+    "document_number": "DOC288803018",
+    "issue_date": "2020-05-15",
+    "expiry_date": "2028-05-05",
+    "description": "Bank statement; employer 'TechBridge Solutions' visible in salary line description.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00019",
+    "customer_id": "CUST-00012",
+    "document_type": "national_id",
+    "document_number": "DOC621841019",
+    "issue_date": "2022-06-02",
+    "expiry_date": "2032-04-18",
+    "description": "EDC bill; peak consumption month; same premise ID as mortgage collateral file.",
+    "verification_status": "flagged",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00020",
+    "customer_id": "CUST-00010",
+    "document_type": "passport",
+    "document_number": "DOC109853020",
+    "issue_date": "2021-08-02",
+    "expiry_date": "2030-02-27",
+    "description": "Gas cylinder delivery invoice used as auxiliary address proof; matches national ID commune.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00021",
+    "customer_id": "CUST-00019",
+    "document_type": "bank_statement",
+    "document_number": "DOC716113021",
+    "issue_date": "2019-11-20",
+    "expiry_date": "2020-02-18",
+    "description": "Cooperative membership certificate; supplementary to primary national ID for rural client.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00022",
+    "customer_id": "CUST-00041",
+    "document_type": "utility_bill",
+    "document_number": "DOC503380022",
+    "issue_date": "2022-11-14",
+    "expiry_date": "2023-02-12",
+    "description": "Lease agreement first page; landlord ID cross-checked; property in Daun Penh.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00023",
+    "customer_id": "CUST-00007",
+    "document_type": "passport",
+    "document_number": "DOC833247023",
+    "issue_date": "2021-02-20",
+    "expiry_date": "2029-05-05",
+    "description": "Salary certificate on company letterhead; wet signature; matches three months of credits.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00024",
+    "customer_id": "CUST-00002",
+    "document_type": "utility_bill",
+    "document_number": "DOC880841024",
+    "issue_date": "2020-07-16",
+    "expiry_date": "2020-10-14",
+    "description": "Tax registration certificate (TIN letter); business address aligned with utility bill.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00025",
+    "customer_id": "CUST-00039",
+    "document_type": "utility_bill",
+    "document_number": "DOC940886025",
+    "issue_date": "2023-09-02",
+    "expiry_date": "2023-12-01",
+    "description": "Vehicle registration card; VIN matches loan collateral schedule for auto facility.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00026",
+    "customer_id": "CUST-00015",
+    "document_type": "passport",
+    "document_number": "DOC791201026",
+    "issue_date": "2022-06-25",
+    "expiry_date": "2028-11-18",
+    "description": "Insurance policy schedule; beneficiary matches applicant; policy number quoted in CRM.",
+    "verification_status": "flagged",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00027",
+    "customer_id": "CUST-00009",
+    "document_type": "national_id",
+    "document_number": "DOC134985027",
+    "issue_date": "2022-07-09",
+    "expiry_date": "2031-02-20",
+    "description": "Court fee receipt; uncommon doc type; escalated to compliance for source-of-address rationale.",
+    "verification_status": "flagged",
+    "risk_flags": [
+      "name_mismatch_minor"
+    ]
+  },
+  {
+    "id": "KYC-00028",
+    "customer_id": "CUST-00024",
+    "document_type": "passport",
+    "document_number": "DOC310548028",
+    "issue_date": "2019-07-04",
+    "expiry_date": "2026-02-26",
+    "description": "Student ID from Royal University of Phnom Penh; used for education loan KYC package.",
+    "verification_status": "verified",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00029",
+    "customer_id": "CUST-00035",
+    "document_type": "drivers_license",
+    "document_number": "DOC369452029",
+    "issue_date": "2021-12-23",
+    "expiry_date": "2029-10-14",
+    "description": "Marriage certificate copy; name change narrative linked to prior national ID number.",
+    "verification_status": "pending",
+    "risk_flags": []
+  },
+  {
+    "id": "KYC-00030",
+    "customer_id": "CUST-00019",
+    "document_type": "drivers_license",
+    "document_number": "DOC890785030",
+    "issue_date": "2023-07-06",
+    "expiry_date": "2029-02-24",
+    "description": "Village chief certification letter; handwritten Khmer; notarized copy uploaded.",
+    "verification_status": "verified",
+    "risk_flags": [
+      "expiry_within_90_days"
+    ]
+  }
+]
