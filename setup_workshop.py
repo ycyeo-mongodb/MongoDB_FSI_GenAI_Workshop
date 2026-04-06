@@ -20,7 +20,7 @@ from pathlib import Path
 from bson import ObjectId
 from dotenv import load_dotenv
 from pymongo import MongoClient
-from pymongo.errors import OperationFailure, PyMongoError
+from pymongo.errors import PyMongoError
 from pymongo.operations import SearchIndexModel
 import voyageai
 
@@ -64,16 +64,14 @@ def embed_batch(voyage: voyageai.Client, texts: list[str], input_type: str = "do
     return all_embeddings
 
 
-def safe_drop_search_index(collection, name: str) -> None:
+def index_exists(collection, name: str) -> bool:
     try:
-        collection.drop_search_index(name)
-        print(f"    Dropped existing index: {name}")
-    except (OperationFailure, PyMongoError) as e:
-        code = getattr(e, "code", None)
-        msg = str(e).lower()
-        if code == 27 or "not found" in msg or "cannot be found" in msg:
-            return
-        raise
+        for idx in collection.list_search_indexes():
+            if idx.get("name") == name:
+                return True
+    except PyMongoError:
+        pass
+    return False
 
 
 # ──────────────────────────────────────────────────────────
@@ -345,69 +343,52 @@ def step_load_kyc(db, voyage: voyageai.Client) -> None:
 
 def step_create_indexes(db) -> None:
     print("\n" + "=" * 60)
-    print("STEP 5: Create Atlas Search & Vector Search indexes")
+    print("STEP 5: Create Atlas Vector Search indexes")
     print("=" * 60)
 
-    faq_col = db["faq_chunks"]
-    kyc_col = db["kyc_documents"]
-    prod_col = db["bank_products"]
+    indexes = [
+        (
+            db["faq_chunks"],
+            "faq_vector_index",
+            {
+                "fields": [
+                    {"type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine"},
+                    {"type": "filter", "path": "category"},
+                    {"type": "filter", "path": "language"},
+                ]
+            },
+        ),
+        (
+            db["kyc_documents"],
+            "kyc_vector_index",
+            {
+                "fields": [
+                    {"type": "vector", "path": "description_embedding", "numDimensions": 1024, "similarity": "cosine"},
+                ]
+            },
+        ),
+        (
+            db["bank_products"],
+            "product_vector_index",
+            {
+                "fields": [
+                    {"type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine"},
+                ]
+            },
+        ),
+    ]
 
-    # --- Clean up stale indexes from previous runs ---
-    safe_drop_search_index(faq_col, "faq_text_index")
-    safe_drop_search_index(prod_col, "bank_products_vector_index")
-
-    # --- FAQ vector index ---
-    print(f"\n  [{faq_col.name}] faq_vector_index ...")
-    safe_drop_search_index(faq_col, "faq_vector_index")
-    faq_col.create_search_index(model=SearchIndexModel(
-        definition={
-            "fields": [
-                {"type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine"},
-                {"type": "filter", "path": "category"},
-                {"type": "filter", "path": "language"},
-            ]
-        },
-        name="faq_vector_index",
-        type="vectorSearch",
-    ))
-    print("    ✓ Requested faq_vector_index (vectorSearch, 1024d, cosine)")
-
-    # --- KYC vector index ---
-    print(f"\n  [{kyc_col.name}] kyc_vector_index ...")
-    safe_drop_search_index(kyc_col, "kyc_vector_index")
-    kyc_col.create_search_index(model=SearchIndexModel(
-        definition={
-            "fields": [
-                {"type": "vector", "path": "description_embedding", "numDimensions": 1024, "similarity": "cosine"},
-            ]
-        },
-        name="kyc_vector_index",
-        type="vectorSearch",
-    ))
-    print("    ✓ Requested kyc_vector_index (description_embedding, 1024d, cosine)")
-
-    # --- Bank products vector index ---
-    print(f"\n  [{prod_col.name}] product_vector_index ...")
-    safe_drop_search_index(prod_col, "product_vector_index")
-    prod_col.create_search_index(model=SearchIndexModel(
-        definition={
-            "fields": [
-                {"type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine"},
-            ]
-        },
-        name="product_vector_index",
-        type="vectorSearch",
-    ))
-    print("    ✓ Requested product_vector_index (embedding, 1024d, cosine)")
-
-    # --- List all created indexes ---
-    print("\n  Listing search indexes (status may still be BUILDING) ...")
-    for col in [faq_col, kyc_col, prod_col]:
-        try:
-            for idx in col.list_search_indexes():
-                print(f"    {col.name}.{idx.get('name')}: {idx.get('type', '?')} — {idx.get('status', '?')}")
-        except PyMongoError:
-            pass
+    for col, name, definition in indexes:
+        if index_exists(col, name):
+            print(f"\n  [{col.name}] {name} — already exists, skipping")
+        else:
+            print(f"\n  [{col.name}] {name} — creating ...")
+            col.create_search_index(model=SearchIndexModel(
+                definition=definition,
+                name=name,
+                type="vectorSearch",
+            ))
+            print(f"    ✓ Requested {name}")
 
 
 # ──────────────────────────────────────────────────────────
