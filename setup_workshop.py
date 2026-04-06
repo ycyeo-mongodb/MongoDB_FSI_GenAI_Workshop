@@ -69,9 +69,11 @@ def safe_drop_search_index(collection, name: str) -> None:
         collection.drop_search_index(name)
         print(f"    Dropped existing index: {name}")
     except (OperationFailure, PyMongoError) as e:
+        code = getattr(e, "code", None)
         msg = str(e).lower()
-        if "not found" not in msg:
-            raise
+        if code == 27 or "not found" in msg or "cannot be found" in msg:
+            return
+        raise
 
 
 # ──────────────────────────────────────────────────────────
