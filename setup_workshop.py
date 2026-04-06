@@ -352,6 +352,10 @@ def step_create_indexes(db) -> None:
     kyc_col = db["kyc_documents"]
     prod_col = db["bank_products"]
 
+    # --- Clean up stale indexes from previous runs ---
+    safe_drop_search_index(faq_col, "faq_text_index")
+    safe_drop_search_index(prod_col, "bank_products_vector_index")
+
     # --- FAQ vector index ---
     print(f"\n  [{faq_col.name}] faq_vector_index ...")
     safe_drop_search_index(faq_col, "faq_vector_index")
@@ -368,24 +372,6 @@ def step_create_indexes(db) -> None:
     ))
     print("    ✓ Requested faq_vector_index (vectorSearch, 1024d, cosine)")
 
-    # --- FAQ text index ---
-    print(f"\n  [{faq_col.name}] faq_text_index ...")
-    safe_drop_search_index(faq_col, "faq_text_index")
-    faq_col.create_search_index(model=SearchIndexModel(
-        definition={
-            "mappings": {
-                "dynamic": False,
-                "fields": {
-                    "chunk_text": {"type": "string"},
-                    "title": {"type": "string"},
-                    "category": {"type": "stringFacet"},
-                },
-            }
-        },
-        name="faq_text_index",
-    ))
-    print("    ✓ Requested faq_text_index (chunk_text, title, category)")
-
     # --- KYC vector index ---
     print(f"\n  [{kyc_col.name}] kyc_vector_index ...")
     safe_drop_search_index(kyc_col, "kyc_vector_index")
@@ -401,18 +387,18 @@ def step_create_indexes(db) -> None:
     print("    ✓ Requested kyc_vector_index (description_embedding, 1024d, cosine)")
 
     # --- Bank products vector index ---
-    print(f"\n  [{prod_col.name}] bank_products_vector_index ...")
-    safe_drop_search_index(prod_col, "bank_products_vector_index")
+    print(f"\n  [{prod_col.name}] product_vector_index ...")
+    safe_drop_search_index(prod_col, "product_vector_index")
     prod_col.create_search_index(model=SearchIndexModel(
         definition={
             "fields": [
                 {"type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine"},
             ]
         },
-        name="bank_products_vector_index",
+        name="product_vector_index",
         type="vectorSearch",
     ))
-    print("    ✓ Requested bank_products_vector_index (embedding, 1024d, cosine)")
+    print("    ✓ Requested product_vector_index (embedding, 1024d, cosine)")
 
     # --- List all created indexes ---
     print("\n  Listing search indexes (status may still be BUILDING) ...")
@@ -462,8 +448,8 @@ def main() -> None:
     print(f"  Database: {DB_NAME}")
     print(f"  Collections loaded: faq_chunks, customers, accounts,")
     print(f"    loan_applications, transactions, bank_products, kyc_documents")
-    print(f"  Indexes requested: faq_vector_index, faq_text_index,")
-    print(f"    kyc_vector_index, bank_products_vector_index")
+    print(f"  Indexes requested: faq_vector_index, kyc_vector_index,")
+    print(f"    product_vector_index  (3 total — M0 free tier limit)")
     print(f"  Total time: {elapsed:.1f}s")
     print()
     print("  ⚠  Atlas builds search indexes asynchronously.")
