@@ -56,6 +56,11 @@ input,select,textarea{font-family:inherit;font-size:inherit}
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;
 }
 .header .user-info span{font-size:13px;opacity:.9}
+#custPicker{
+  padding:4px 10px;border:1px solid rgba(255,255,255,.25);border-radius:6px;
+  background:rgba(255,255,255,.1);color:#fff;font-size:12px;max-width:220px;
+}
+#custPicker option{color:var(--text);background:#fff}
 
 /* ── Layout ────────────────────────────────────────────── */
 .app-body{display:flex;min-height:calc(100vh - 104px)}
@@ -89,7 +94,7 @@ input,select,textarea{font-family:inherit;font-size:inherit}
 }
 .account-card.savings{background:linear-gradient(135deg,#0d47a1 0%,#1565c0 100%)}
 .account-card.current{background:linear-gradient(135deg,#1a237e 0%,#283593 100%)}
-.account-card.fixed{background:linear-gradient(135deg,#004d40 0%,#00695c 100%)}
+.account-card.fixed_deposit{background:linear-gradient(135deg,#004d40 0%,#00695c 100%)}
 .account-card::after{
   content:'';position:absolute;top:-30px;right:-30px;width:120px;height:120px;
   border-radius:50%;background:rgba(255,255,255,.06);
@@ -123,7 +128,7 @@ tr:hover{background:var(--surface)}
 .section-title{font-size:18px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:8px}
 .section-subtitle{font-size:13px;color:var(--text-muted);margin-bottom:16px}
 
-/* ── Forms (Employee Portal) ───────────────────────────── */
+/* ── Forms ─────────────────────────────────────────────── */
 .form-group{margin-bottom:16px}
 .form-group label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px}
 .form-group select,.form-group input,.form-group textarea{
@@ -140,8 +145,6 @@ tr:hover{background:var(--surface)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
 .btn-outline:hover{border-color:var(--primary);color:var(--primary)}
-.btn-success{background:var(--success);color:#fff}
-.btn-danger{background:var(--danger);color:#fff}
 
 /* ── Result Panels ─────────────────────────────────────── */
 .result-panel{background:var(--surface);border-radius:8px;padding:20px;margin-top:16px;border:1px solid var(--border)}
@@ -202,15 +205,6 @@ tr:hover{background:var(--surface)}
 }
 .chatbot-panel .chat-input button:disabled{opacity:.4}
 
-/* ── Employee Tabs ─────────────────────────────────────── */
-.emp-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px}
-.emp-tabs button{
-  padding:12px 24px;background:none;border:none;font-weight:600;font-size:13px;
-  color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;
-}
-.emp-tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}
-.emp-tabs button:hover{color:var(--primary)}
-
 /* ── Loader ────────────────────────────────────────────── */
 .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -246,8 +240,9 @@ tr:hover{background:var(--surface)}
     <span>Atlas Digital Bank</span>
   </div>
   <div class="user-info">
-    <span id="headerUserName">Welcome, Sarah</span>
-    <div class="avatar">SC</div>
+    <select id="custPicker" class="hidden"><option value="">Loading customers...</option></select>
+    <span id="headerUserName">Welcome</span>
+    <div class="avatar" id="headerAvatar">--</div>
   </div>
 </div>
 
@@ -280,34 +275,14 @@ tr:hover{background:var(--surface)}
   <div class="main" id="customerMain">
     <!-- Dashboard -->
     <div id="page-dashboard">
-      <h2 class="section-title">👋 Good morning, Sarah</h2>
+      <h2 class="section-title" id="dashGreeting">Loading...</h2>
       <p class="section-subtitle">Here's your financial overview for today.</p>
-
-      <div class="accounts-grid">
-        <div class="account-card savings">
-          <div class="label">Savings Account</div>
-          <div class="number">•••• •••• 4521</div>
-          <div class="balance">$24,850.75</div>
-          <div class="balance-label">Available Balance</div>
-        </div>
-        <div class="account-card current">
-          <div class="label">Current Account</div>
-          <div class="number">•••• •••• 8903</div>
-          <div class="balance">$12,340.00</div>
-          <div class="balance-label">Available Balance</div>
-        </div>
-        <div class="account-card fixed">
-          <div class="label">Fixed Deposit</div>
-          <div class="number">•••• •••• 1187</div>
-          <div class="balance">$50,000.00</div>
-          <div class="balance-label">Matures 15 Sep 2026</div>
-        </div>
-      </div>
+      <div class="accounts-grid" id="dashAccounts"></div>
 
       <h3 class="section-title" style="font-size:16px">Quick Actions</h3>
       <div class="quick-actions">
-        <div class="quick-action"><span class="qa-icon">💸</span><span class="qa-label">Transfer</span></div>
-        <div class="quick-action"><span class="qa-icon">📱</span><span class="qa-label">Pay Bills</span></div>
+        <div class="quick-action" onclick="showCustomerPage('transfers')"><span class="qa-icon">💸</span><span class="qa-label">Transfer</span></div>
+        <div class="quick-action" onclick="showCustomerPage('payments')"><span class="qa-icon">📱</span><span class="qa-label">Pay Bills</span></div>
         <div class="quick-action"><span class="qa-icon">🏧</span><span class="qa-label">Card-less ATM</span></div>
         <div class="quick-action"><span class="qa-icon">🔄</span><span class="qa-label">Standing Order</span></div>
         <div class="quick-action"><span class="qa-icon">💱</span><span class="qa-label">FX Exchange</span></div>
@@ -316,39 +291,28 @@ tr:hover{background:var(--surface)}
       <div class="card">
         <div class="card-header">
           <h3>Recent Transactions</h3>
-          <span style="font-size:12px;color:var(--text-muted)">Last 7 days</span>
+          <span style="font-size:12px;color:var(--text-muted)">Last 30 days</span>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
-            <tbody>
-              <tr><td>06 Apr</td><td>Salary — MongoDB Inc</td><td><span class="badge badge-success">Income</span></td><td class="amount-positive" style="text-align:right">+ $8,500.00</td></tr>
-              <tr><td>05 Apr</td><td>AWS Cloud Services</td><td><span class="badge badge-info">Technology</span></td><td class="amount-negative" style="text-align:right">– $245.80</td></tr>
-              <tr><td>04 Apr</td><td>Central Market — Groceries</td><td><span class="badge badge-warning">Shopping</span></td><td class="amount-negative" style="text-align:right">– $87.50</td></tr>
-              <tr><td>03 Apr</td><td>Transfer to Fixed Deposit</td><td><span class="badge badge-info">Savings</span></td><td class="amount-negative" style="text-align:right">– $2,000.00</td></tr>
-              <tr><td>02 Apr</td><td>Grab — Transport</td><td><span class="badge badge-warning">Transport</span></td><td class="amount-negative" style="text-align:right">– $18.40</td></tr>
-              <tr><td>01 Apr</td><td>Interest Credit</td><td><span class="badge badge-success">Income</span></td><td class="amount-positive" style="text-align:right">+ $42.15</td></tr>
-              <tr><td>31 Mar</td><td>Netflix Subscription</td><td><span class="badge badge-info">Entertainment</span></td><td class="amount-negative" style="text-align:right">– $15.98</td></tr>
-            </tbody>
-          </table>
+        <div class="table-wrap" id="dashTransactions">
+          <div class="loading-row"><span class="spinner"></span> Loading transactions...</div>
         </div>
       </div>
     </div>
 
     <div id="page-accounts" class="hidden">
       <h2 class="section-title">🏦 My Accounts</h2>
-      <div class="accounts-grid">
-        <div class="account-card savings"><div class="label">Savings Account</div><div class="number">1234-5678-9012-4521</div><div class="balance">$24,850.75</div><div class="balance-label">Available Balance</div></div>
-        <div class="account-card current"><div class="label">Current Account</div><div class="number">1234-5678-9012-8903</div><div class="balance">$12,340.00</div><div class="balance-label">Available Balance</div></div>
-        <div class="account-card fixed"><div class="label">Fixed Deposit — 12 months @ 3.8% p.a.</div><div class="number">1234-5678-9012-1187</div><div class="balance">$50,000.00</div><div class="balance-label">Matures 15 Sep 2026</div></div>
+      <div class="accounts-grid" id="acctGrid"></div>
+      <div class="card" id="acctTotalCard">
+        <div class="card-header"><h3>Total Relationship Balance</h3></div>
+        <p style="font-size:32px;font-weight:700;color:var(--primary)" id="acctTotalBal">—</p>
+        <p style="color:var(--text-muted);margin-top:4px;font-size:13px" id="acctTotalCount"></p>
       </div>
-      <div class="card"><div class="card-header"><h3>Total Relationship Balance</h3></div><p style="font-size:32px;font-weight:700;color:var(--primary)">$87,190.75</p><p style="color:var(--text-muted);margin-top:4px;font-size:13px">Across 3 accounts</p></div>
     </div>
 
     <div id="page-transfers" class="hidden">
       <h2 class="section-title">↔️ Fund Transfer</h2>
       <div class="card" style="max-width:500px">
-        <div class="form-group"><label>From Account</label><select><option>Savings •••4521 — $24,850.75</option><option>Current •••8903 — $12,340.00</option></select></div>
+        <div class="form-group"><label>From Account</label><select id="xferFromAcct"><option>Loading...</option></select></div>
         <div class="form-group"><label>To Account / Recipient</label><input type="text" placeholder="Enter account number or select payee"></div>
         <div class="form-group"><label>Amount (USD)</label><input type="number" placeholder="0.00"></div>
         <div class="form-group"><label>Remarks (Optional)</label><input type="text" placeholder="e.g. Rent payment"></div>
@@ -359,7 +323,7 @@ tr:hover{background:var(--surface)}
     <div id="page-payments" class="hidden">
       <h2 class="section-title">💳 Bill Payments</h2>
       <div class="card" style="max-width:500px">
-        <div class="form-group"><label>Biller</label><select><option>Select a biller...</option><option>Electricity — City Power Co.</option><option>Water — National Water</option><option>Internet — FibreNet ISP</option><option>Mobile — TelcoPlus</option></select></div>
+        <div class="form-group"><label>Biller</label><select><option>Select a biller...</option><option>Electricity — EDC</option><option>Water — PPWSA</option><option>Internet — Cellcard</option><option>Mobile — Smart</option></select></div>
         <div class="form-group"><label>Account / Reference Number</label><input type="text" placeholder="Enter reference number"></div>
         <div class="form-group"><label>Amount (USD)</label><input type="number" placeholder="0.00"></div>
         <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Pay Now</button>
@@ -368,8 +332,8 @@ tr:hover{background:var(--surface)}
 
     <div id="page-loans" class="hidden">
       <h2 class="section-title">📋 My Loans</h2>
-      <div class="card"><div class="card-header"><h3>Personal Loan</h3><span class="badge badge-success">Active</span></div>
-        <div class="metric-row"><div class="metric"><div class="metric-value">$15,000</div><div class="metric-label">Original Amount</div></div><div class="metric"><div class="metric-value">$9,240</div><div class="metric-label">Outstanding</div></div><div class="metric"><div class="metric-value">14.5%</div><div class="metric-label">Interest Rate</div></div><div class="metric"><div class="metric-value">18/36</div><div class="metric-label">Months Paid</div></div></div>
+      <div id="loansContainer">
+        <div class="loading-row"><span class="spinner"></span> Loading loan data...</div>
       </div>
       <div class="card" style="text-align:center;padding:40px;color:var(--text-muted)">
         <p style="font-size:15px">Looking for a new loan?</p>
@@ -385,9 +349,9 @@ tr:hover{background:var(--surface)}
     <div id="page-settings" class="hidden">
       <h2 class="section-title">⚙️ Settings</h2>
       <div class="card" style="max-width:500px">
-        <div class="form-group"><label>Display Name</label><input type="text" value="Sarah Chen"></div>
-        <div class="form-group"><label>Email</label><input type="email" value="sarah.chen@email.com"></div>
-        <div class="form-group"><label>Phone</label><input type="tel" value="+65 9123 4567"></div>
+        <div class="form-group"><label>Display Name</label><input type="text" id="settingsName" value=""></div>
+        <div class="form-group"><label>Employment</label><input type="text" id="settingsEmployment" value="" readonly></div>
+        <div class="form-group"><label>Monthly Income (USD)</label><input type="text" id="settingsIncome" value="" readonly></div>
         <button class="btn btn-primary" style="margin-top:8px">Save Changes</button>
       </div>
     </div>
@@ -445,6 +409,14 @@ tr:hover{background:var(--surface)}
           </div>
           <h4 style="margin-top:16px;margin-bottom:8px;font-size:14px">AI-Generated Explanation</h4>
           <div class="explanation-box" id="creditExplanation"></div>
+        </div>
+
+        <div id="creditRecommendations" class="hidden">
+          <div class="card">
+            <div class="card-header"><h3>Suggested Alternative Products</h3><span class="badge badge-info">VECTOR SEARCH</span></div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Based on the customer's profile, these products may be a better fit. Recommendations are generated using <strong>Atlas Vector Search</strong> over bank product descriptions.</p>
+            <div id="creditRecsContainer"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -505,50 +477,273 @@ tr:hover{background:var(--surface)}
 </div>
 
 <script>
-/* ── Portal switching ──────────────────────────────── */
-function switchPortal(portal) {
-  document.querySelectorAll('.portal-bar .tabs button').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById('customerPortal').classList.toggle('hidden', portal !== 'customer');
-  document.getElementById('employeePortal').classList.toggle('hidden', portal !== 'employee');
-  const hdr = document.getElementById('headerUserName');
-  hdr.textContent = portal === 'customer' ? 'Welcome, Sarah' : 'Employee: James Tan';
-  document.querySelector('.header .avatar').textContent = portal === 'customer' ? 'SC' : 'JT';
-  if (portal === 'employee') { loadCustomers(); loadKYCDocs(); }
+/* ═══════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════ */
+let allCustomers = [];
+let activeCustomer = null;   // full customer object
+let customerAccounts = [];
+let customerTransactions = [];
+let customerLoans = [];
+let currentPortal = 'customer';
+
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const fmtUSD = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+const initials = name => (name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+const fmtDate = iso => {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', {day:'2-digit', month:'short'});
+};
+const acctLabel = type => ({savings:'Savings Account',current:'Current Account',fixed_deposit:'Fixed Deposit'}[type] || type);
+const catBadge = cat => {
+  const map = {income:'badge-success',shopping:'badge-warning',technology:'badge-info',transport:'badge-warning',
+    entertainment:'badge-info',savings:'badge-info',utilities:'badge-warning',cash:'badge-warning',
+    dining:'badge-warning',insurance:'badge-info',loan:'badge-danger',education:'badge-info',healthcare:'badge-warning'};
+  return map[cat] || 'badge-info';
+};
+const maskAcct = num => {
+  if (!num) return '';
+  const parts = num.split('-');
+  if (parts.length >= 4) return '•••• •••• ' + parts[parts.length-1];
+  return num;
+};
+
+/* ═══════════════════════════════════════════════════════
+   BOOTSTRAP — load customer list on page load
+   ═══════════════════════════════════════════════════════ */
+async function bootstrap() {
+  try {
+    const res = await fetch('/api/customers');
+    allCustomers = await res.json();
+  } catch (e) {
+    console.warn('Could not load customers', e);
+    $('dashGreeting').textContent = 'Could not connect to backend.';
+    return;
+  }
+
+  const picker = $('custPicker');
+  picker.innerHTML = '<option value="">— Select a customer —</option>';
+  allCustomers.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c._id;
+    o.textContent = (c.full_name || c.name || c._id);
+    picker.appendChild(o);
+  });
+  picker.classList.remove('hidden');
+  picker.onchange = () => selectCustomer(picker.value);
+
+  if (allCustomers.length > 0) {
+    picker.value = allCustomers[0]._id;
+    selectCustomer(allCustomers[0]._id);
+  }
 }
 
-/* ── Customer nav ──────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   SELECT A CUSTOMER — refresh all portal data
+   ═══════════════════════════════════════════════════════ */
+async function selectCustomer(oid) {
+  if (!oid) return;
+  activeCustomer = allCustomers.find(c => c._id === oid) || null;
+  if (!activeCustomer) return;
+
+  const name = activeCustomer.full_name || activeCustomer.name || 'Customer';
+  $('headerUserName').textContent = 'Welcome, ' + name.split(' ')[0];
+  $('headerAvatar').textContent = initials(name);
+  $('dashGreeting').textContent = '👋 Good morning, ' + name.split(' ')[0];
+
+  renderSettings();
+
+  try {
+    const [acctRes, txnRes, loanRes] = await Promise.all([
+      fetch('/api/accounts?customer_id=' + encodeURIComponent(oid)),
+      fetch('/api/transactions?customer_id=' + encodeURIComponent(oid) + '&limit=50'),
+      fetch('/api/loan-applications?customer_id=' + encodeURIComponent(oid)),
+    ]);
+    customerAccounts = await acctRes.json();
+    customerTransactions = await txnRes.json();
+    customerLoans = await loanRes.json();
+  } catch (e) {
+    console.warn('Error loading customer data', e);
+    customerAccounts = []; customerTransactions = []; customerLoans = [];
+  }
+
+  renderDashboard();
+  renderAccountsPage();
+  renderTransfersPage();
+  renderLoansPage();
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER: Dashboard
+   ═══════════════════════════════════════════════════════ */
+function renderDashboard() {
+  const grid = $('dashAccounts');
+  grid.innerHTML = '';
+  customerAccounts.forEach(a => {
+    const extra = a.account_type === 'fixed_deposit' && a.maturity_date
+      ? 'Matures ' + fmtDate(a.maturity_date) + (a.interest_rate ? ' @ ' + a.interest_rate + '% p.a.' : '')
+      : 'Available Balance';
+    grid.innerHTML += '<div class="account-card ' + a.account_type + '">' +
+      '<div class="label">' + acctLabel(a.account_type) + '</div>' +
+      '<div class="number">' + maskAcct(a.account_number) + '</div>' +
+      '<div class="balance">' + fmtUSD(a.balance_usd) + '</div>' +
+      '<div class="balance-label">' + extra + '</div></div>';
+  });
+
+  const txnWrap = $('dashTransactions');
+  if (customerTransactions.length === 0) {
+    txnWrap.innerHTML = '<p style="padding:16px;color:var(--text-muted)">No recent transactions.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
+  customerTransactions.slice(0, 15).forEach(t => {
+    const sign = t.type === 'credit' ? '+' : '–';
+    const cls = t.type === 'credit' ? 'amount-positive' : 'amount-negative';
+    html += '<tr><td>' + fmtDate(t.date) + '</td><td>' + t.description +
+      '</td><td><span class="badge ' + catBadge(t.category) + '">' + (t.category||'').charAt(0).toUpperCase() + (t.category||'').slice(1) +
+      '</span></td><td class="' + cls + '" style="text-align:right">' + sign + ' ' + fmtUSD(t.amount_usd) + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  txnWrap.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER: Accounts page
+   ═══════════════════════════════════════════════════════ */
+function renderAccountsPage() {
+  const grid = $('acctGrid');
+  grid.innerHTML = '';
+  let total = 0;
+  customerAccounts.forEach(a => {
+    total += a.balance_usd;
+    let sublabel = acctLabel(a.account_type);
+    if (a.account_type === 'fixed_deposit' && a.interest_rate) {
+      sublabel += ' — ' + (a.interest_rate) + '% p.a.';
+    }
+    grid.innerHTML += '<div class="account-card ' + a.account_type + '">' +
+      '<div class="label">' + sublabel + '</div>' +
+      '<div class="number">' + (a.account_number || '') + '</div>' +
+      '<div class="balance">' + fmtUSD(a.balance_usd) + '</div>' +
+      '<div class="balance-label">' + (a.account_type === 'fixed_deposit' && a.maturity_date ? 'Matures ' + fmtDate(a.maturity_date) : 'Available Balance') + '</div></div>';
+  });
+  $('acctTotalBal').textContent = fmtUSD(total);
+  $('acctTotalCount').textContent = 'Across ' + customerAccounts.length + ' account' + (customerAccounts.length !== 1 ? 's' : '');
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER: Transfers page — populate From Account
+   ═══════════════════════════════════════════════════════ */
+function renderTransfersPage() {
+  const sel = $('xferFromAcct');
+  sel.innerHTML = '';
+  customerAccounts.filter(a => a.account_type !== 'fixed_deposit').forEach(a => {
+    const o = document.createElement('option');
+    o.value = a._id;
+    o.textContent = acctLabel(a.account_type) + ' ' + maskAcct(a.account_number) + ' — ' + fmtUSD(a.balance_usd);
+    sel.appendChild(o);
+  });
+  if (sel.options.length === 0) sel.innerHTML = '<option>No accounts available</option>';
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER: Loans page
+   ═══════════════════════════════════════════════════════ */
+function renderLoansPage() {
+  const container = $('loansContainer');
+  if (customerLoans.length === 0) {
+    container.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--text-muted)"><p>No active loans found for this customer.</p></div>';
+    return;
+  }
+  let html = '';
+  customerLoans.forEach(l => {
+    const statusBadge = l.status === 'approved' ? 'badge-success' : l.status === 'declined' ? 'badge-danger' : 'badge-warning';
+    html += '<div class="card"><div class="card-header"><h3>' + ((l.purpose||'Loan').charAt(0).toUpperCase() + (l.purpose||'').slice(1)) +
+      ' Loan</h3><span class="badge ' + statusBadge + '">' + (l.status||'pending').toUpperCase() + '</span></div>' +
+      '<div class="metric-row">' +
+      '<div class="metric"><div class="metric-value">' + fmtUSD(l.loan_amount || l.amount_usd || 0) + '</div><div class="metric-label">Amount</div></div>' +
+      '<div class="metric"><div class="metric-value">' + fmtUSD(l.monthly_payment || l.monthly_payment_usd || 0) + '</div><div class="metric-label">Monthly Payment</div></div>' +
+      '<div class="metric"><div class="metric-value">' + (l.requested_rate || '—') + '%</div><div class="metric-label">Interest Rate</div></div>' +
+      '<div class="metric"><div class="metric-value">' + (l.term_months || '—') + ' mo</div><div class="metric-label">Term</div></div>' +
+      '</div></div>';
+  });
+  container.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER: Settings page
+   ═══════════════════════════════════════════════════════ */
+function renderSettings() {
+  if (!activeCustomer) return;
+  $('settingsName').value = activeCustomer.full_name || activeCustomer.name || '';
+  $('settingsEmployment').value = (activeCustomer.employment_type || '').replace(/_/g, ' ');
+  $('settingsIncome').value = fmtUSD(activeCustomer.income_usd || activeCustomer.monthly_income || 0);
+}
+
+/* ═══════════════════════════════════════════════════════
+   PORTAL SWITCHING
+   ═══════════════════════════════════════════════════════ */
+function switchPortal(portal) {
+  currentPortal = portal;
+  document.querySelectorAll('.portal-bar .tabs button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  $('customerPortal').classList.toggle('hidden', portal !== 'customer');
+  $('employeePortal').classList.toggle('hidden', portal !== 'employee');
+  $('custPicker').classList.toggle('hidden', portal !== 'customer');
+
+  if (portal === 'customer') {
+    const name = activeCustomer ? (activeCustomer.full_name || activeCustomer.name || '').split(' ')[0] : '';
+    $('headerUserName').textContent = name ? 'Welcome, ' + name : 'Welcome';
+    $('headerAvatar').textContent = activeCustomer ? initials(activeCustomer.full_name || activeCustomer.name) : '--';
+  } else {
+    $('headerUserName').textContent = 'Employee: James Tan';
+    $('headerAvatar').textContent = 'JT';
+    loadEmpCustomers();
+    loadKYCDocs();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   CUSTOMER NAV
+   ═══════════════════════════════════════════════════════ */
 const custPages = ['dashboard','accounts','transfers','payments','loans','investments','settings'];
 function showCustomerPage(page) {
   custPages.forEach(p => {
-    const el = document.getElementById('page-' + p);
+    const el = $('page-' + p);
     if (el) el.classList.toggle('hidden', p !== page);
   });
   document.querySelectorAll('#customerPortal .sidebar .nav-item').forEach(n => n.classList.remove('active'));
   event?.target?.closest?.('.nav-item')?.classList.add('active');
 }
 
-/* ── Employee tabs ─────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   EMPLOYEE TABS
+   ═══════════════════════════════════════════════════════ */
 function showEmpTab(tab) {
-  document.getElementById('tab-credit').classList.toggle('hidden', tab !== 'credit');
-  document.getElementById('tab-kyc').classList.toggle('hidden', tab !== 'kyc');
+  $('tab-credit').classList.toggle('hidden', tab !== 'credit');
+  $('tab-kyc').classList.toggle('hidden', tab !== 'kyc');
   document.querySelectorAll('#employeePortal .sidebar .nav-item').forEach(n => n.classList.remove('active'));
   event?.target?.closest?.('.nav-item')?.classList.add('active');
 }
 
-/* ── Chatbot ───────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   CHATBOT
+   ═══════════════════════════════════════════════════════ */
 let chatOpen = false;
 function toggleChat() {
   chatOpen = !chatOpen;
-  document.getElementById('chatPanel').classList.toggle('visible', chatOpen);
-  const fab = document.getElementById('chatFab');
+  $('chatPanel').classList.toggle('visible', chatOpen);
+  const fab = $('chatFab');
   fab.textContent = chatOpen ? '✕' : '💬';
   fab.classList.toggle('open', chatOpen);
-  if (chatOpen) document.getElementById('chatInput').focus();
+  if (chatOpen) $('chatInput').focus();
 }
 
 function appendMsg(text, role, sourcesHtml) {
-  const wrap = document.getElementById('chatMessages');
+  const wrap = $('chatMessages');
   const div = document.createElement('div');
   div.className = 'chat-msg ' + role;
   let html = text.replace(/\n/g, '<br>');
@@ -559,24 +754,22 @@ function appendMsg(text, role, sourcesHtml) {
 }
 
 function showTyping() {
-  const wrap = document.getElementById('chatMessages');
+  const wrap = $('chatMessages');
   const div = document.createElement('div');
-  div.className = 'chat-typing';
-  div.id = 'typingIndicator';
+  div.className = 'chat-typing'; div.id = 'typingIndicator';
   div.innerHTML = '<span class="spinner"></span> Thinking...';
-  wrap.appendChild(div);
-  wrap.scrollTop = wrap.scrollHeight;
+  wrap.appendChild(div); wrap.scrollTop = wrap.scrollHeight;
 }
-function hideTyping() { document.getElementById('typingIndicator')?.remove(); }
+function hideTyping() { $('typingIndicator')?.remove(); }
 
 async function sendChat() {
-  const input = document.getElementById('chatInput');
+  const input = $('chatInput');
   const q = input.value.trim();
   if (!q) return;
   input.value = '';
   appendMsg(q, 'user');
   showTyping();
-  document.getElementById('chatSendBtn').disabled = true;
+  $('chatSendBtn').disabled = true;
   try {
     const res = await fetch('/api/faq?q=' + encodeURIComponent(q) + '&limit=5');
     const data = await res.json();
@@ -592,19 +785,21 @@ async function sendChat() {
     hideTyping();
     appendMsg('Connection error — is the FastAPI server running on this port?', 'bot');
   }
-  document.getElementById('chatSendBtn').disabled = false;
+  $('chatSendBtn').disabled = false;
 }
 
-/* ── Credit Scoring ────────────────────────────────── */
-let customersCache = [];
-async function loadCustomers() {
+/* ═══════════════════════════════════════════════════════
+   EMPLOYEE: Credit Scoring
+   ═══════════════════════════════════════════════════════ */
+let empCustomersCache = [];
+async function loadEmpCustomers() {
   try {
     const [custRes, loanRes] = await Promise.all([fetch('/api/customers'), fetch('/api/loan-applications')]);
-    customersCache = await custRes.json();
+    empCustomersCache = await custRes.json();
     window._allLoans = await loanRes.json();
-    const sel = document.getElementById('creditCustomerSelect');
+    const sel = $('creditCustomerSelect');
     sel.innerHTML = '<option value="">— Select a customer —</option>';
-    customersCache.forEach(c => {
+    empCustomersCache.forEach(c => {
       const o = document.createElement('option');
       o.value = c._id;
       o.textContent = (c.full_name || c.name || c._id) + (c.credit_score ? ' (CS: ' + c.credit_score + ')' : '');
@@ -612,50 +807,76 @@ async function loadCustomers() {
     });
     sel.onchange = () => {
       const cid = sel.value;
-      const loanSel = document.getElementById('creditLoanSelect');
+      const loanSel = $('creditLoanSelect');
       loanSel.innerHTML = '<option value="">— Select a loan —</option>';
       (window._allLoans || []).filter(l => String(l.customer_id) === cid).forEach(l => {
         const o = document.createElement('option');
         o.value = l._id;
-        o.textContent = (l.purpose || 'Loan') + ' — $' + (l.loan_amount || l.amount_usd || '?');
+        o.textContent = ((l.purpose||'Loan').charAt(0).toUpperCase()+(l.purpose||'').slice(1)) + ' — ' + fmtUSD(l.loan_amount || l.amount_usd || 0);
         loanSel.appendChild(o);
       });
-      loanSel.onchange = () => { document.getElementById('creditAnalyzeBtn').disabled = !loanSel.value; };
-      document.getElementById('creditAnalyzeBtn').disabled = true;
+      loanSel.onchange = () => { $('creditAnalyzeBtn').disabled = !loanSel.value; };
+      $('creditAnalyzeBtn').disabled = true;
     };
   } catch (e) { console.warn('Could not load customers', e); }
 }
 
 async function analyzeCredit() {
-  const cid = document.getElementById('creditCustomerSelect').value;
-  const lid = document.getElementById('creditLoanSelect').value;
+  const cid = $('creditCustomerSelect').value;
+  const lid = $('creditLoanSelect').value;
   if (!cid || !lid) return;
-  const btn = document.getElementById('creditAnalyzeBtn');
-  const sp = document.getElementById('creditSpinner');
+  const btn = $('creditAnalyzeBtn');
+  const sp = $('creditSpinner');
   btn.disabled = true; sp.classList.remove('hidden');
+  $('creditRecommendations').classList.add('hidden');
   try {
     const res = await fetch('/api/credit-score?customer_id=' + encodeURIComponent(cid) + '&loan_id=' + encodeURIComponent(lid));
     const d = await res.json();
     if (d.detail) { alert(d.detail); return; }
-    document.getElementById('creditScoreVal').textContent = d.risk_score ?? '—';
-    document.getElementById('creditRiskLevel').textContent = (d.risk_level || '—').toUpperCase();
-    document.getElementById('creditDTI').textContent = d.factors?.dti != null ? d.factors.dti + '%' : '—';
-    document.getElementById('creditCreditScore').textContent = d.factors?.credit_score ?? '—';
-    const badge = document.getElementById('creditDecisionBadge');
+    $('creditScoreVal').textContent = d.risk_score ?? '—';
+    $('creditRiskLevel').textContent = (d.risk_level || '—').toUpperCase();
+    $('creditDTI').textContent = d.factors?.dti != null ? d.factors.dti + '%' : '—';
+    $('creditCreditScore').textContent = d.factors?.credit_score ?? '—';
+    const badge = $('creditDecisionBadge');
     badge.textContent = (d.decision || '').toUpperCase();
     badge.className = 'badge ' + (d.decision === 'approved' ? 'badge-success' : d.decision === 'declined' ? 'badge-danger' : 'badge-warning');
-    document.getElementById('creditExplanation').textContent = d.explanation || 'No explanation generated.';
-    document.getElementById('creditResult').classList.remove('hidden');
+    $('creditExplanation').textContent = d.explanation || 'No explanation generated.';
+    $('creditResult').classList.remove('hidden');
+
+    if (d.decision === 'declined') {
+      loadProductRecommendations(cid);
+    }
   } catch (e) { alert('Error: ' + e.message); }
   finally { btn.disabled = false; sp.classList.add('hidden'); }
 }
 
-/* ── KYC Verification ──────────────────────────────── */
+async function loadProductRecommendations(customerId) {
+  try {
+    const res = await fetch('/api/recommend-products?customer_id=' + encodeURIComponent(customerId) + '&limit=3');
+    const d = await res.json();
+    const recs = d.recommendations || [];
+    if (recs.length === 0) return;
+    const container = $('creditRecsContainer');
+    container.innerHTML = recs.map(r =>
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:14px 16px;background:var(--surface);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">' +
+      '<div style="flex:1"><strong style="font-size:14px">' + (r.name || 'Product') + '</strong>' +
+      '<p style="font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.5">' + (r.description || '') + '</p></div>' +
+      '<div style="text-align:right;margin-left:16px;flex-shrink:0"><span style="font-size:18px;font-weight:700;color:var(--primary)">' +
+      (r.score ? (r.score * 100).toFixed(1) + '%' : '—') + '</span>' +
+      '<br><span style="font-size:10px;color:var(--text-muted)">match</span></div></div>'
+    ).join('');
+    $('creditRecommendations').classList.remove('hidden');
+  } catch (e) { console.warn('Could not load product recommendations', e); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   EMPLOYEE: KYC Verification
+   ═══════════════════════════════════════════════════════ */
 async function loadKYCDocs() {
   try {
     const res = await fetch('/api/kyc-documents');
     const docs = await res.json();
-    const sel = document.getElementById('kycDocSelect');
+    const sel = $('kycDocSelect');
     sel.innerHTML = '<option value="">— Select a document —</option>';
     docs.forEach(d => {
       const o = document.createElement('option');
@@ -663,27 +884,27 @@ async function loadKYCDocs() {
       o.textContent = (d.document_type || 'Document') + ' — ' + (d.document_number || d._id);
       sel.appendChild(o);
     });
-    sel.onchange = () => { document.getElementById('kycVerifyBtn').disabled = !sel.value; };
+    sel.onchange = () => { $('kycVerifyBtn').disabled = !sel.value; };
   } catch (e) { console.warn('Could not load KYC docs', e); }
 }
 
 async function verifyKYC() {
-  const did = document.getElementById('kycDocSelect').value;
+  const did = $('kycDocSelect').value;
   if (!did) return;
-  const btn = document.getElementById('kycVerifyBtn');
-  const sp = document.getElementById('kycSpinner');
+  const btn = $('kycVerifyBtn');
+  const sp = $('kycSpinner');
   btn.disabled = true; sp.classList.remove('hidden');
   try {
     const res = await fetch('/api/kyc-check?document_id=' + encodeURIComponent(did));
     const d = await res.json();
     if (d.detail) { alert(d.detail); return; }
 
-    const statusBadge = document.getElementById('kycStatusBadge');
+    const statusBadge = $('kycStatusBadge');
     const hasIssues = d.risk_flags && d.risk_flags.length > 0;
     statusBadge.textContent = hasIssues ? 'ISSUES FOUND' : 'CLEAR';
     statusBadge.className = 'badge ' + (hasIssues ? 'badge-danger' : 'badge-success');
 
-    const flagsDiv = document.getElementById('kycRiskFlags');
+    const flagsDiv = $('kycRiskFlags');
     flagsDiv.innerHTML = '';
     (d.risk_flags || []).forEach(f => {
       const s = document.createElement('span');
@@ -695,14 +916,14 @@ async function verifyKYC() {
     });
 
     const doc = d.document || {};
-    document.getElementById('kycDocInfo').innerHTML =
+    $('kycDocInfo').innerHTML =
       '<table style="width:100%">' +
       ['document_type','document_number','issue_date','expiry_date','customer_name','description'].map(k => {
         const v = doc[k];
         return v ? '<tr><td style="padding:4px 8px;font-weight:600;color:var(--text-muted);width:160px;font-size:12px">' + k.replace(/_/g,' ').toUpperCase() + '</td><td style="padding:4px 8px;font-size:13px">' + v + '</td></tr>' : '';
       }).join('') + '</table>';
 
-    const dupDiv = document.getElementById('kycDuplicatesList');
+    const dupDiv = $('kycDuplicatesList');
     if (d.duplicates && d.duplicates.length > 0) {
       dupDiv.innerHTML = d.duplicates.map(dup =>
         '<div class="duplicate-item">' +
@@ -710,15 +931,20 @@ async function verifyKYC() {
         '<div style="text-align:right"><span style="font-size:20px;font-weight:700;color:var(--danger)">' + (dup.similarity * 100).toFixed(1) + '%</span><br><span style="font-size:11px;color:var(--text-muted)">similarity</span></div>' +
         '</div>'
       ).join('');
-      document.getElementById('kycDuplicatesSection').classList.remove('hidden');
+      $('kycDuplicatesSection').classList.remove('hidden');
     } else {
       dupDiv.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:12px">No duplicates found above threshold.</p>';
     }
 
-    document.getElementById('kycResult').classList.remove('hidden');
+    $('kycResult').classList.remove('hidden');
   } catch (e) { alert('Error: ' + e.message); }
   finally { btn.disabled = false; sp.classList.add('hidden'); }
 }
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════════ */
+bootstrap();
 </script>
 </body>
 </html>

@@ -204,6 +204,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     loan_applications: Collection[Any] = db["loan_applications"]
     kyc_documents: Collection[Any] = db["kyc_documents"]
     bank_products: Collection[Any] = db["bank_products"]
+    accounts: Collection[Any] = db["accounts"]
+    transactions: Collection[Any] = db["transactions"]
 
     voyage_client = voyageai.Client(api_key=VOYAGE_API_KEY)
 
@@ -214,6 +216,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.loan_applications = loan_applications
     app.state.kyc_documents = kyc_documents
     app.state.bank_products = bank_products
+    app.state.accounts = accounts
+    app.state.transactions = transactions
     app.state.voyage = voyage_client
     app.state.llm_url = LLM_API_URL
 
@@ -472,6 +476,33 @@ async def api_kyc_documents(request: Request) -> list[dict[str, Any]]:
     coll: Collection[Any] = request.app.state.kyc_documents
     projection = {EMBEDDING_FIELD: 0}
     return _serialize_cursor(coll.find({}, projection))
+
+
+@app.get("/api/accounts")
+async def api_accounts(
+    request: Request,
+    customer_id: str = Query(...),
+) -> list[dict[str, Any]]:
+    coll: Collection[Any] = request.app.state.accounts
+    cust_oid = parse_object_id(customer_id, "customer_id")
+    return _serialize_cursor(coll.find({"customer_id": cust_oid}))
+
+
+@app.get("/api/transactions")
+async def api_transactions(
+    request: Request,
+    account_id: Optional[str] = Query(None),
+    customer_id: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    coll: Collection[Any] = request.app.state.transactions
+    query_filter: dict[str, Any] = {}
+    if account_id:
+        query_filter["account_id"] = parse_object_id(account_id, "account_id")
+    elif customer_id:
+        query_filter["customer_id"] = parse_object_id(customer_id, "customer_id")
+    cursor = coll.find(query_filter).sort("date", -1).limit(limit)
+    return _serialize_cursor(cursor)
 
 
 @app.get("/api/recommend-products")
