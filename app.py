@@ -39,6 +39,7 @@ VOYAGE_EMBED_MODEL = "voyage-4-large"
 
 FAQ_VECTOR_INDEX = "faq_vector_index"
 KYC_VECTOR_INDEX = "kyc_vector_index"
+KYC_EMBEDDING_FIELD = "description_embedding"
 PRODUCT_VECTOR_INDEX = "product_vector_index"
 EMBEDDING_FIELD = "embedding"
 
@@ -507,7 +508,7 @@ async def api_kyc_check(
         {
             "$vectorSearch": {
                 "index": KYC_VECTOR_INDEX,
-                "path": EMBEDDING_FIELD,
+                "path": KYC_EMBEDDING_FIELD,
                 "queryVector": query_vector,
                 "numCandidates": 150,
                 "limit": 15,
@@ -515,7 +516,7 @@ async def api_kyc_check(
             }
         },
         {"$addFields": {"similarity": {"$meta": "vectorSearchScore"}}},
-        {"$project": {EMBEDDING_FIELD: 0}},
+        {"$project": {KYC_EMBEDDING_FIELD: 0}},
     ]
 
     similar = list(kyc_coll.aggregate(pipeline))
@@ -556,7 +557,8 @@ async def api_kyc_check(
         risk_flags.append("possible_duplicate_documents")
 
     doc_out = dict(doc)
-    doc_out.pop(EMBEDDING_FIELD, None)
+    doc_out.pop(KYC_EMBEDDING_FIELD, None)
+    doc_out.pop("embedding_model", None)
     doc_out.pop("pdf_data", None)
 
     return {
@@ -570,7 +572,7 @@ async def api_kyc_check(
 @app.get("/api/kyc-documents")
 async def api_kyc_documents(request: Request) -> list[dict[str, Any]]:
     coll: Collection[Any] = request.app.state.kyc_documents
-    projection = {EMBEDDING_FIELD: 0, "pdf_data": 0}
+    projection = {KYC_EMBEDDING_FIELD: 0, "embedding_model": 0, "pdf_data": 0}
     return _serialize_cursor(coll.find({}, projection))
 
 
