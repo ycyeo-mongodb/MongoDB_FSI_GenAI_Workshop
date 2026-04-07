@@ -331,11 +331,15 @@ def step_load_kyc(db, voyage: voyageai.Client) -> None:
     for doc, vec in zip(docs, embeddings):
         doc["description_embedding"] = vec
         doc["embedding_model"] = VOYAGE_MODEL
+        b64 = doc.pop("pdf_data_b64", "")
+        if b64:
+            doc["pdf_data"] = base64.b64decode(b64)
 
     db.kyc_documents.drop()
     if docs:
         db.kyc_documents.insert_many(docs)
-    print(f"  ✓ Inserted {db.kyc_documents.count_documents({})} kyc_documents")
+    pdf_count = sum(1 for d in docs if d.get("pdf_data"))
+    print(f"  ✓ Inserted {db.kyc_documents.count_documents({})} kyc_documents ({pdf_count} with PDF scans)")
 
 
 def step_load_documents(db) -> None:

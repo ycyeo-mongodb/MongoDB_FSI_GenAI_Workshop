@@ -433,7 +433,7 @@ tr:hover{background:var(--surface)}
     <!-- KYC Verification Tab -->
     <div id="tab-kyc" class="hidden">
       <h2 class="section-title">🔍 KYC Document Verification</h2>
-      <p class="section-subtitle">Select a KYC document to verify. The system uses MongoDB Atlas Vector Search to find similar documents and flag potential duplicates.</p>
+      <p class="section-subtitle">Select a KYC document to verify. The system uses MongoDB Atlas Vector Search to find semantically similar documents and flag potential duplicates or fraud.</p>
 
       <div class="card">
         <div class="form-group"><label>KYC Document</label><select id="kycDocSelect"><option value="">Loading documents...</option></select></div>
@@ -444,20 +444,32 @@ tr:hover{background:var(--surface)}
       </div>
 
       <div id="kycResult" class="hidden">
+        <!-- Document scan + details side-by-side -->
         <div class="card">
-          <div class="card-header"><h3>Verification Results</h3><span id="kycStatusBadge" class="badge"></span></div>
-
+          <div class="card-header"><h3>Document Scan</h3><span id="kycStatusBadge" class="badge"></span></div>
           <div id="kycRiskFlags" style="margin-bottom:16px"></div>
-
-          <div id="kycDocDetails" class="result-panel" style="margin-top:0;margin-bottom:16px">
-            <h4>Document Details</h4>
-            <div id="kycDocInfo"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start" id="kycScanGrid">
+            <div>
+              <div id="kycPdfViewer" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#f5f5f5;min-height:280px;display:flex;align-items:center;justify-content:center">
+                <span style="color:var(--text-muted);font-size:13px">Select a document to view scan</span>
+              </div>
+              <div style="text-align:center;margin-top:8px">
+                <a id="kycPdfLink" href="#" target="_blank" class="btn btn-primary" style="font-size:11px;padding:6px 14px;display:none">Open Full Document</a>
+              </div>
+            </div>
+            <div>
+              <h4 style="margin-bottom:12px;font-size:14px">Extracted Details</h4>
+              <div id="kycDocInfo"></div>
+              <div id="kycCustomerInfo" style="margin-top:12px"></div>
+            </div>
           </div>
+        </div>
 
-          <div id="kycDuplicatesSection">
-            <h4 style="margin-bottom:12px;font-size:14px">Potential Duplicates</h4>
-            <div id="kycDuplicatesList"></div>
-          </div>
+        <!-- Duplicate detection -->
+        <div class="card" id="kycDuplicatesSection">
+          <div class="card-header"><h3>Duplicate Detection</h3><span class="badge badge-info">VECTOR SEARCH</span></div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Documents with high semantic similarity to the selected document, detected using <strong>Atlas Vector Search</strong> over description embeddings.</p>
+          <div id="kycDuplicatesList"></div>
         </div>
       </div>
     </div>
@@ -1012,16 +1024,19 @@ async function loadProductRecommendations(customerId) {
 /* ═══════════════════════════════════════════════════════
    EMPLOYEE: KYC Verification
    ═══════════════════════════════════════════════════════ */
+let _kycDocsCache = [];
 async function loadKYCDocs() {
   try {
     const res = await fetch('/api/kyc-documents');
-    const docs = await res.json();
+    _kycDocsCache = await res.json();
     const sel = $('kycDocSelect');
-    sel.innerHTML = '<option value="">— Select a document —</option>';
-    docs.forEach(d => {
+    sel.innerHTML = '<option value="">-- Select a document --</option>';
+    _kycDocsCache.forEach(d => {
       const o = document.createElement('option');
       o.value = d._id;
-      o.textContent = (d.document_type || 'Document') + ' — ' + (d.document_number || d._id);
+      const typeLabel = (d.document_type || 'document').replace(/_/g, ' ');
+      const custName = d.customer_name || '';
+      o.textContent = typeLabel.toUpperCase() + ' - ' + (d.document_number || d._id) + (custName ? ' (' + custName + ')' : '');
       sel.appendChild(o);
     });
     sel.onchange = () => { $('kycVerifyBtn').disabled = !sel.value; };
@@ -1049,31 +1064,73 @@ async function verifyKYC() {
     (d.risk_flags || []).forEach(f => {
       const s = document.createElement('span');
       s.className = 'risk-flag';
-      s.style.background = f.includes('expired') ? '#fee2e2' : '#fef3c7';
-      s.style.color = f.includes('expired') ? '#991b1b' : '#92400e';
+      s.style.cssText = f.includes('expired')
+        ? 'display:inline-block;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;margin-right:8px;background:#fee2e2;color:#991b1b'
+        : 'display:inline-block;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;margin-right:8px;background:#fef3c7;color:#92400e';
       s.textContent = f.replace(/_/g, ' ').toUpperCase();
       flagsDiv.appendChild(s);
     });
 
+    // PDF viewer
+    const pdfUrl = '/api/kyc-documents/' + did + '/pdf';
+    $('kycPdfViewer').innerHTML = '<iframe src="' + pdfUrl + '" style="width:100%;height:380px;border:none;border-radius:6px" title="KYC Document Scan"></iframe>';
+    const pdfLink = $('kycPdfLink');
+    pdfLink.href = pdfUrl;
+    pdfLink.style.display = 'inline-block';
+
+    // Document details table
     const doc = d.document || {};
-    $('kycDocInfo').innerHTML =
-      '<table style="width:100%">' +
-      ['document_type','document_number','issue_date','expiry_date','customer_name','description'].map(k => {
-        const v = doc[k];
-        return v ? '<tr><td style="padding:4px 8px;font-weight:600;color:var(--text-muted);width:160px;font-size:12px">' + k.replace(/_/g,' ').toUpperCase() + '</td><td style="padding:4px 8px;font-size:13px">' + v + '</td></tr>' : '';
+    const detailFields = [
+      ['Document Type', (doc.document_type || '').replace(/_/g, ' ').toUpperCase()],
+      ['Document Number', doc.document_number],
+      ['Issue Date', doc.issue_date],
+      ['Expiry Date', doc.expiry_date],
+      ['Verification Status', doc.verification_status],
+      ['Description', doc.description],
+    ];
+    $('kycDocInfo').innerHTML = '<table style="width:100%">' +
+      detailFields.filter(([,v]) => v).map(([label, value]) => {
+        let style = 'font-size:13px';
+        if (label === 'Verification Status') {
+          const color = value === 'verified' ? 'var(--success)' : value === 'flagged' ? 'var(--danger)' : 'var(--warning, #d97706)';
+          style += ';font-weight:700;color:' + color;
+        }
+        return '<tr><td style="padding:5px 8px;font-weight:600;color:var(--text-muted);width:140px;font-size:11px;text-transform:uppercase;vertical-align:top">' + label + '</td><td style="padding:5px 8px;' + style + '">' + value + '</td></tr>';
       }).join('') + '</table>';
 
+    // Customer cross-reference
+    const custId = doc.customer_id;
+    if (custId) {
+      try {
+        const custRes = await fetch('/api/customers');
+        const allCusts = await custRes.json();
+        const cust = allCusts.find(c => c._id === custId);
+        if (cust) {
+          $('kycCustomerInfo').innerHTML =
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">' +
+            '<h4 style="font-size:13px;margin-bottom:8px">Linked Customer Record</h4>' +
+            '<table style="width:100%">' +
+            [['Name', cust.full_name || cust.name], ['Credit Score', cust.credit_score], ['Employment', (cust.employment_type||'').replace(/_/g,' ')], ['Income (USD)', cust.income_usd ? '$' + Number(cust.income_usd).toLocaleString() : ''], ['Account Age', cust.account_age_months ? cust.account_age_months + ' months' : '']].filter(([,v]) => v).map(([l,v]) =>
+              '<tr><td style="padding:3px 8px;font-size:11px;color:var(--text-muted);font-weight:600;width:120px">' + l + '</td><td style="padding:3px 8px;font-size:12px">' + v + '</td></tr>'
+            ).join('') + '</table></div>';
+        }
+      } catch (_) {}
+    }
+
+    // Duplicates
     const dupDiv = $('kycDuplicatesList');
     if (d.duplicates && d.duplicates.length > 0) {
       dupDiv.innerHTML = d.duplicates.map(dup =>
-        '<div class="duplicate-item">' +
-        '<div><strong>' + (dup.document_type || 'Document') + '</strong><br><span style="font-size:12px;color:var(--text-muted)">ID: ' + (dup.id || '—') + '</span></div>' +
-        '<div style="text-align:right"><span style="font-size:20px;font-weight:700;color:var(--danger)">' + (dup.similarity * 100).toFixed(1) + '%</span><br><span style="font-size:11px;color:var(--text-muted)">similarity</span></div>' +
-        '</div>'
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--surface);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">' +
+        '<div style="flex:1"><strong style="font-size:13px">' + (dup.document_type || 'Document').replace(/_/g,' ').toUpperCase() + '</strong>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">ID: ' + (dup.id || '') + (dup.customer_id ? ' | Customer: ' + dup.customer_id : '') + '</div></div>' +
+        '<div style="text-align:right;margin-left:16px"><span style="font-size:22px;font-weight:700;color:var(--danger)">' + (dup.similarity * 100).toFixed(1) + '%</span>' +
+        '<div style="font-size:10px;color:var(--text-muted)">similarity</div></div></div>'
       ).join('');
       $('kycDuplicatesSection').classList.remove('hidden');
     } else {
-      dupDiv.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:12px">No duplicates found above threshold.</p>';
+      dupDiv.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:16px;text-align:center;background:var(--surface);border-radius:8px">No duplicate documents detected above the similarity threshold.</p>';
+      $('kycDuplicatesSection').classList.remove('hidden');
     }
 
     $('kycResult').classList.remove('hidden');

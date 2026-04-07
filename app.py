@@ -557,6 +557,7 @@ async def api_kyc_check(
 
     doc_out = dict(doc)
     doc_out.pop(EMBEDDING_FIELD, None)
+    doc_out.pop("pdf_data", None)
 
     return {
         "document": _serialize(doc_out),
@@ -569,8 +570,27 @@ async def api_kyc_check(
 @app.get("/api/kyc-documents")
 async def api_kyc_documents(request: Request) -> list[dict[str, Any]]:
     coll: Collection[Any] = request.app.state.kyc_documents
-    projection = {EMBEDDING_FIELD: 0}
+    projection = {EMBEDDING_FIELD: 0, "pdf_data": 0}
     return _serialize_cursor(coll.find({}, projection))
+
+
+@app.get("/api/kyc-documents/{doc_id}/pdf")
+async def api_kyc_document_pdf(request: Request, doc_id: str) -> Response:
+    """Serve the scanned KYC document PDF."""
+    coll: Collection[Any] = request.app.state.kyc_documents
+    oid = parse_object_id(doc_id, "doc_id")
+    doc = coll.find_one({"_id": oid})
+    if not doc or "pdf_data" not in doc:
+        raise HTTPException(status_code=404, detail="KYC document PDF not found")
+    pdf_bytes = bytes(doc["pdf_data"])
+    doc_type = doc.get("document_type", "document")
+    doc_num = doc.get("document_number", doc_id)
+    filename = f"{doc_type}_{doc_num}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @app.get("/api/accounts")
