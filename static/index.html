@@ -412,6 +412,14 @@ tr:hover{background:var(--surface)}
           <div class="explanation-box" id="creditExplanation"></div>
         </div>
 
+        <div id="creditDocuments" class="hidden">
+          <div class="card">
+            <div class="card-header"><h3>Supporting Documents</h3><span class="badge badge-info">MONGODB BINARY</span></div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">PDF documents stored in MongoDB (<code>banking.documents</code>) are retrieved, text-extracted, and fed into the LLM prompt so the credit explanation references real payslip and statement figures.</p>
+            <div id="creditDocsContainer" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+          </div>
+        </div>
+
         <div id="creditRecommendations" class="hidden">
           <div class="card">
             <div class="card-header"><h3>Suggested Alternative Products</h3><span class="badge badge-info">VECTOR SEARCH</span></div>
@@ -938,6 +946,7 @@ async function analyzeCredit() {
   const sp = $('creditSpinner');
   btn.disabled = true; sp.classList.remove('hidden');
   $('creditRecommendations').classList.add('hidden');
+  $('creditDocuments').classList.add('hidden');
   try {
     const res = await fetch('/api/credit-score?customer_id=' + encodeURIComponent(cid) + '&loan_id=' + encodeURIComponent(lid));
     const d = await res.json();
@@ -951,6 +960,28 @@ async function analyzeCredit() {
     badge.className = 'badge ' + (d.decision === 'approved' ? 'badge-success' : d.decision === 'declined' ? 'badge-danger' : 'badge-warning');
     $('creditExplanation').textContent = d.explanation || 'No explanation generated.';
     $('creditResult').classList.remove('hidden');
+
+    const supDocs = d.supporting_documents || [];
+    const docsSection = $('creditDocuments');
+    const docsContainer = $('creditDocsContainer');
+    if (supDocs.length > 0) {
+      docsContainer.innerHTML = supDocs.map(sd => {
+        const icon = sd.doc_type === 'payslip' ? '💰' : '🏦';
+        const label = (sd.doc_type || 'document').replace('_', ' ').toUpperCase();
+        return '<div style="padding:14px 16px;background:var(--surface);border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;gap:12px">'
+          + '<span style="font-size:28px">' + icon + '</span>'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-weight:600;font-size:13px">' + label + '</div>'
+          + '<div style="font-size:11px;color:var(--text-muted);word-break:break-all">' + (sd.filename || '') + '</div>'
+          + '<div style="font-size:11px;color:var(--text-muted)">Generated: ' + (sd.generated_date || '') + '</div>'
+          + '</div>'
+          + '<a href="/api/documents/' + sd._id + '/pdf" target="_blank" class="btn btn-primary" style="font-size:11px;padding:6px 10px;white-space:nowrap">View PDF</a>'
+          + '</div>';
+      }).join('');
+      docsSection.classList.remove('hidden');
+    } else {
+      docsSection.classList.add('hidden');
+    }
 
     if (d.decision === 'declined') {
       loadProductRecommendations(cid);

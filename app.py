@@ -12,11 +12,13 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, List, Optional
 
+import base64
+
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 import requests
 from pymongo import MongoClient
@@ -230,6 +232,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     bank_products: Collection[Any] = db["bank_products"]
     accounts: Collection[Any] = db["accounts"]
     transactions: Collection[Any] = db["transactions"]
+    documents: Collection[Any] = db["documents"]
 
     voyage_client = voyageai.Client(api_key=VOYAGE_API_KEY)
 
@@ -242,6 +245,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.bank_products = bank_products
     app.state.accounts = accounts
     app.state.transactions = transactions
+    app.state.documents = documents
     app.state.voyage = voyage_client
     app.state.llm_url = LLM_API_URL
 
@@ -408,9 +412,31 @@ async def api_credit_score(
     customer_doc = {k: v for k, v in row.items() if k != "loan"}
     risk_score, risk_level, decision, factors = compute_risk_score(customer_doc, loan_doc)
 
+    docs_coll: Collection[Any] = request.app.state.documents
+    supporting_docs = list(docs_coll.find(
+        {"customer_id": cust_oid},
+        {"pdf_data": 0},
+    ))
+
+    doc_context_parts: list[str] = []
+    for sd in supporting_docs:
+        text = sd.get("text_content", "")
+        if text:
+            doc_context_parts.append(
+                f"[{sd.get('doc_type', 'document').upper()}] {sd.get('filename', '')}\n{text}"
+            )
+    doc_context = "\n\n".join(doc_context_parts) if doc_context_parts else ""
+
     expl_user = _credit_explanation_prompt(
         customer_doc, loan_doc, risk_score, risk_level, decision, factors
     )
+    if doc_context:
+        expl_user += (
+            "\n\nSupporting documents on file for this customer:\n"
+            + doc_context
+            + "\n\nReference specific document evidence (income figures, balances) in your explanation."
+        )
+
     explanation = call_llm(
         [
             {"role": "system", "content": "You write clear, professional credit decision explanations."},
@@ -427,6 +453,15 @@ async def api_credit_score(
         "decision": decision,
         "explanation": explanation,
         "factors": factors,
+        "supporting_documents": [
+            {
+                "_id": str(sd["_id"]),
+                "doc_type": sd.get("doc_type"),
+                "filename": sd.get("filename"),
+                "generated_date": sd.get("generated_date"),
+            }
+            for sd in supporting_docs
+        ],
     }
 
 
@@ -609,6 +644,39 @@ async def api_recommend_products(
         )
 
     return {"customer_id": customer_id, "recommendations": recs}
+
+
+# ──────────────────────────────────────────────────────────
+# Customer documents (payslips, bank statements)
+# ──────────────────────────────────────────────────────────
+
+@app.get("/api/documents")
+async def api_documents(
+    request: Request,
+    customer_id: str = Query(...),
+) -> list[dict[str, Any]]:
+    """List documents for a customer (metadata only, no binary PDF)."""
+    coll: Collection[Any] = request.app.state.documents
+    cust_oid = parse_object_id(customer_id, "customer_id")
+    docs = coll.find({"customer_id": cust_oid}, {"pdf_data": 0})
+    return _serialize_cursor(docs)
+
+
+@app.get("/api/documents/{doc_id}/pdf")
+async def api_document_pdf(request: Request, doc_id: str) -> Response:
+    """Download a single PDF document by its _id."""
+    coll: Collection[Any] = request.app.state.documents
+    oid = parse_object_id(doc_id, "doc_id")
+    doc = coll.find_one({"_id": oid})
+    if not doc or "pdf_data" not in doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    pdf_bytes = bytes(doc["pdf_data"])
+    filename = doc.get("filename", f"{doc_id}.pdf")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 # ──────────────────────────────────────────────────────────
