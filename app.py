@@ -762,6 +762,215 @@ async def api_lambda_logs(
 
 
 # ──────────────────────────────────────────────────────────
+# Analytics Dashboard: MongoDB aggregation pipelines
+# ──────────────────────────────────────────────────────────
+
+@app.get("/api/analytics")
+async def api_analytics(request: Request) -> dict[str, Any]:
+    """Run multiple aggregation pipelines and return dashboard metrics."""
+    db = request.app.state.db
+
+    # 1. Loan status breakdown
+    loan_status = list(db.loan_applications.aggregate([
+        {"$group": {"_id": "$status", "count": {"$sum": 1}, "total_amount": {"$sum": "$loan_amount"}}},
+        {"$sort": {"count": -1}},
+    ]))
+
+    # 2. Loan purpose distribution
+    loan_by_purpose = list(db.loan_applications.aggregate([
+        {"$group": {"_id": "$purpose", "count": {"$sum": 1}, "avg_amount": {"$avg": "$loan_amount"}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+    ]))
+
+    # 3. Risk level distribution via customer credit scores
+    risk_distribution = list(db.customers.aggregate([
+        {"$bucket": {
+            "groupBy": "$credit_score",
+            "boundaries": [0, 400, 600, 700, 850],
+            "default": "unknown",
+            "output": {"count": {"$sum": 1}, "avg_income": {"$avg": "$monthly_income"}},
+        }},
+    ]))
+
+    # 4. Top-level KPIs
+    total_customers = db.customers.count_documents({})
+    total_loans = db.loan_applications.count_documents({})
+    total_kyc = db.kyc_documents.count_documents({})
+
+    agg_loan_totals = list(db.loan_applications.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$loan_amount"}, "avg": {"$avg": "$loan_amount"}}},
+    ]))
+    loan_totals = agg_loan_totals[0] if agg_loan_totals else {}
+
+    # 5. Employment type breakdown
+    employment = list(db.customers.aggregate([
+        {"$group": {"_id": "$employment_type", "count": {"$sum": 1}, "avg_credit_score": {"$avg": "$credit_score"}}},
+        {"$sort": {"count": -1}},
+    ]))
+
+    # 6. Monthly loan trend (by application_date)
+    loan_trend = list(db.loan_applications.aggregate([
+        {"$addFields": {"month": {"$dateToString": {"format": "%Y-%m", "date": "$application_date"}}}},
+        {"$group": {"_id": "$month", "count": {"$sum": 1}, "volume": {"$sum": "$loan_amount"}}},
+        {"$sort": {"_id": 1}},
+        {"$limit": 12},
+    ]))
+
+    return _serialize({
+        "kpis": {
+            "total_customers": total_customers,
+            "total_loans": total_loans,
+            "total_kyc_documents": total_kyc,
+            "total_loan_amount": loan_totals.get("total", 0),
+            "avg_loan_amount": loan_totals.get("avg", 0),
+        },
+        "loan_status": loan_status,
+        "loan_by_purpose": loan_by_purpose,
+        "risk_distribution": risk_distribution,
+        "employment": employment,
+        "loan_trend": loan_trend,
+    })
+
+
+# ──────────────────────────────────────────────────────────
+# Ask Your Data: NL → MongoDB aggregation → results
+# ──────────────────────────────────────────────────────────
+
+SCHEMA_CONTEXT = """
+MongoDB database: "banking"
+
+Collections and their fields:
+
+1. customers:
+   - _id (ObjectId), full_name, email, phone, date_of_birth, address, city, country
+   - employment_type (salaried|self_employed|government|retired|student)
+   - monthly_income (number), credit_score (number, 300-850)
+   - payment_history (excellent|good|fair|poor)
+   - account_age_months (number), financial_goals (string)
+
+2. loan_applications:
+   - _id (ObjectId), customer_id (ObjectId ref→customers)
+   - loan_amount (number), term_months (number), interest_rate (number)
+   - monthly_payment (number), purpose (string, e.g. "home","auto","education","personal","business")
+   - status (approved|pending|declined)
+   - application_date (Date)
+
+3. accounts:
+   - _id (ObjectId), customer_id (ObjectId ref→customers)
+   - account_type (savings|checking), balance (number), currency (string)
+
+4. transactions:
+   - _id (ObjectId), account_id (ObjectId ref→accounts), customer_id (ObjectId ref→customers)
+   - amount (number), type (credit|debit), category (string), description (string)
+   - date (Date)
+
+5. kyc_documents:
+   - _id (ObjectId), customer_id (string), document_type (national_id|passport|drivers_license)
+   - document_number, issue_date, expiry_date, verification_status (pending|verified|rejected)
+   - risk_flags (array of strings)
+
+6. bank_products:
+   - _id (ObjectId), name, description, category, features (array)
+"""
+
+ASK_DATA_SYSTEM_PROMPT = (
+    "You are a MongoDB analytics expert for a banking application.\n"
+    "Given the database schema below and a user's natural language question, "
+    "generate a MongoDB aggregation pipeline that answers the question.\n\n"
+    + SCHEMA_CONTEXT +
+    "\n\nRules:\n"
+    "- Return ONLY valid JSON with this structure: {\"collection\": \"<name>\", \"pipeline\": [<stages>]}\n"
+    "- Use proper MongoDB aggregation operators ($match, $group, $sort, $project, $lookup, $unwind, $addFields, $bucket, $limit, etc.)\n"
+    "- For ObjectId references, use string comparison where needed since customer_id may be stored as ObjectId or string.\n"
+    "- Keep pipelines efficient — limit results to 20 rows max.\n"
+    "- Always include a $project or $group that produces human-readable field names.\n"
+    "- Do NOT wrap in markdown fences.\n"
+    "- If the question cannot be answered from the schema, return {\"error\": \"<reason>\"}.\n"
+)
+
+
+@app.post("/api/ask-data")
+async def api_ask_data(
+    request: Request,
+    q: str = Query(..., min_length=3),
+) -> dict[str, Any]:
+    """
+    Accept a natural language question, use Claude to generate a MongoDB
+    aggregation pipeline, execute it, and return results + the generated query.
+    """
+    llm_url: str = request.app.state.llm_url
+    db = request.app.state.db
+
+    messages = [
+        {"role": "system", "content": ASK_DATA_SYSTEM_PROMPT},
+        {"role": "user", "content": q},
+    ]
+
+    t0 = time.time()
+    try:
+        resp = requests.post(llm_url, json={"messages": messages}, timeout=60)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+    llm_ms = round((time.time() - t0) * 1000)
+
+    data = resp.json()
+    if "error" in data:
+        raise HTTPException(status_code=502, detail=f"LLM error: {data['error']}")
+    raw = (data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
+    usage = data.get("usage", {})
+
+    parsed: dict[str, Any] = {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        cleaned = raw
+        if "```json" in cleaned:
+            cleaned = cleaned.split("```json", 1)[1].rsplit("```", 1)[0]
+        elif "```" in cleaned:
+            cleaned = cleaned.split("```", 1)[1].rsplit("```", 1)[0]
+        try:
+            parsed = json.loads(cleaned.strip())
+        except json.JSONDecodeError:
+            return {"query": q, "error": "Could not parse LLM response as JSON", "raw_response": raw[:2000]}
+
+    if "error" in parsed:
+        return {"query": q, "error": parsed["error"], "llm_latency_ms": llm_ms}
+
+    collection_name = parsed.get("collection", "")
+    pipeline = parsed.get("pipeline", [])
+
+    if collection_name not in ("customers", "loan_applications", "accounts",
+                                "transactions", "kyc_documents", "bank_products",
+                                "loan_support_docs", "faq_chunks"):
+        return {"query": q, "error": f"Unknown collection: {collection_name}"}
+
+    t1 = time.time()
+    try:
+        results = list(db[collection_name].aggregate(pipeline))
+    except Exception as exc:
+        return {
+            "query": q,
+            "generated_pipeline": {"collection": collection_name, "pipeline": pipeline},
+            "error": f"Aggregation error: {str(exc)}",
+            "llm_latency_ms": llm_ms,
+            "usage": usage,
+        }
+    query_ms = round((time.time() - t1) * 1000)
+
+    return _serialize({
+        "query": q,
+        "generated_pipeline": {"collection": collection_name, "pipeline": pipeline},
+        "results": results[:50],
+        "result_count": len(results),
+        "llm_latency_ms": llm_ms,
+        "query_latency_ms": query_ms,
+        "usage": usage,
+    })
+
+
+# ──────────────────────────────────────────────────────────
 # Document Intelligence: Bedrock Claude multimodal extraction → MongoDB
 # ──────────────────────────────────────────────────────────
 

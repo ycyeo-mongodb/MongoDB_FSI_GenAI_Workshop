@@ -145,6 +145,8 @@ tr:hover{background:var(--surface)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
 .btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+.ask-suggestion{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:4px 12px;font-size:11px;color:var(--text-muted);cursor:pointer;transition:all .15s}
+.ask-suggestion:hover{border-color:var(--accent);color:var(--accent);background:rgba(37,99,235,.04)}
 
 /* ── Result Panels ─────────────────────────────────────── */
 .result-panel{background:var(--surface);border-radius:8px;padding:20px;margin-top:16px;border:1px solid var(--border)}
@@ -384,10 +386,9 @@ tr:hover{background:var(--surface)}
       <div class="nav-item" onclick="showEmpTab('kyc')"><span class="icon">🔍</span>KYC Verification</div>
     </div>
     <div class="nav-group">
-      <div class="nav-group-title">Operations</div>
-      <div class="nav-item" style="opacity:.4"><span class="icon">👥</span>Customer List</div>
-      <div class="nav-item" style="opacity:.4"><span class="icon">📑</span>Loan Queue</div>
-      <div class="nav-item" style="opacity:.4"><span class="icon">📊</span>Reports</div>
+      <div class="nav-group-title">Analytics</div>
+      <div class="nav-item" onclick="showEmpTab('analytics')"><span class="icon">📈</span>Dashboard</div>
+      <div class="nav-item" onclick="showEmpTab('askdata')"><span class="icon">🤖</span>Ask Your Data</div>
     </div>
     <div class="nav-group" style="margin-top:auto;padding:20px 24px">
       <div style="background:#e8eaf6;border-radius:8px;padding:14px;font-size:12px;color:var(--primary)">
@@ -487,6 +488,119 @@ tr:hover{background:var(--surface)}
         </div>
       </div>
     </div>
+
+    <!-- Analytics Dashboard Tab -->
+    <div id="tab-analytics" class="hidden">
+      <h2 class="section-title">📈 Analytics Dashboard</h2>
+      <p class="section-subtitle">Real-time insights powered by <strong>MongoDB Aggregation Pipelines</strong>. All charts are computed live from the database.</p>
+
+      <!-- KPI row -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px" id="analyticsKpis">
+        <div class="card" style="text-align:center;padding:20px">
+          <div style="font-size:24px;font-weight:800;color:var(--accent)" id="kpiCustomers">—</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Total Customers</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px">
+          <div style="font-size:24px;font-weight:800;color:var(--accent)" id="kpiLoans">—</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Loan Applications</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px">
+          <div style="font-size:24px;font-weight:800;color:var(--accent)" id="kpiKyc">—</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">KYC Documents</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px">
+          <div style="font-size:24px;font-weight:800;color:var(--primary)" id="kpiTotalLoan">—</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Total Loan Volume</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px">
+          <div style="font-size:24px;font-weight:800;color:var(--primary)" id="kpiAvgLoan">—</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Avg Loan Size</div>
+        </div>
+      </div>
+
+      <!-- Charts row 1 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card">
+          <div class="card-header"><h3>Loan Status</h3><span class="badge badge-info">$group</span></div>
+          <div id="chartLoanStatus" style="min-height:220px;display:flex;align-items:flex-end;gap:8px;padding:16px 0"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Loans by Purpose</h3><span class="badge badge-info">$group</span></div>
+          <div id="chartLoanPurpose" style="min-height:220px;display:flex;align-items:flex-end;gap:6px;padding:16px 0"></div>
+        </div>
+      </div>
+
+      <!-- Charts row 2 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card">
+          <div class="card-header"><h3>Credit Score Distribution</h3><span class="badge badge-info">$bucket</span></div>
+          <div id="chartRisk" style="min-height:220px;display:flex;align-items:flex-end;gap:8px;padding:16px 0"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Employment Breakdown</h3><span class="badge badge-info">$group</span></div>
+          <div id="chartEmployment" style="min-height:220px;display:flex;align-items:flex-end;gap:8px;padding:16px 0"></div>
+        </div>
+      </div>
+
+      <!-- Aggregation pipelines shown -->
+      <div class="card" style="background:#0d1117;border:1px solid #30363d">
+        <div class="card-header"><h3 style="color:#58a6ff">MongoDB Aggregation Pipelines Used</h3></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-family:monospace;font-size:11px;color:#c9d1d9">
+          <div style="background:#161b22;padding:12px;border-radius:6px">
+            <div style="color:#7ee787;margin-bottom:6px;font-weight:600">Loan Status</div>
+            <pre style="margin:0;white-space:pre-wrap">db.loan_applications.aggregate([
+  { $group: { _id: "$status",
+    count: { $sum: 1 },
+    total: { $sum: "$loan_amount" }}},
+  { $sort: { count: -1 }}
+])</pre>
+          </div>
+          <div style="background:#161b22;padding:12px;border-radius:6px">
+            <div style="color:#7ee787;margin-bottom:6px;font-weight:600">Credit Score Buckets</div>
+            <pre style="margin:0;white-space:pre-wrap">db.customers.aggregate([
+  { $bucket: {
+    groupBy: "$credit_score",
+    boundaries: [0, 400, 600, 700, 850],
+    output: { count: { $sum: 1 },
+      avg_income: { $avg: "$monthly_income" }}
+  }}
+])</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ask Your Data Tab -->
+    <div id="tab-askdata" class="hidden">
+      <h2 class="section-title">🤖 Ask Your Data</h2>
+      <p class="section-subtitle">Ask questions in natural language. <strong>Amazon Bedrock (Claude)</strong> translates your question into a <strong>MongoDB aggregation pipeline</strong>, executes it live, and returns the results.</p>
+
+      <div class="card">
+        <div class="form-group">
+          <label>Ask a question about the bank's data</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="askDataInput" placeholder="e.g. What is the average loan amount by purpose?" style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);color:var(--text-primary)" onkeydown="if(event.key==='Enter')askData()">
+            <button class="btn btn-primary" onclick="askData()" id="askDataBtn">
+              <span class="spinner hidden" id="askDataSpinner"></span>
+              Ask
+            </button>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+          <span style="font-size:11px;color:var(--text-muted);margin-right:4px">Try:</span>
+          <button class="ask-suggestion" onclick="askSuggestion(this)">How many loans are approved vs declined?</button>
+          <button class="ask-suggestion" onclick="askSuggestion(this)">What is the average credit score by employment type?</button>
+          <button class="ask-suggestion" onclick="askSuggestion(this)">Which customers have the highest monthly income?</button>
+          <button class="ask-suggestion" onclick="askSuggestion(this)">Show me loans over $50,000 with their customer names</button>
+          <button class="ask-suggestion" onclick="askSuggestion(this)">What is the total loan amount by status?</button>
+          <button class="ask-suggestion" onclick="askSuggestion(this)">Count KYC documents by type and verification status</button>
+        </div>
+      </div>
+
+      <div id="askDataResult" class="hidden" style="margin-top:16px"></div>
+      <div id="askDataHistory" style="margin-top:16px"></div>
+    </div>
+
   </div>
 </div>
 
@@ -898,6 +1012,178 @@ function escapeHtml(str) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   ANALYTICS DASHBOARD
+   ═══════════════════════════════════════════════════════ */
+const BAR_COLORS = ['#2563eb','#00ed64','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
+let analyticsLoaded = false;
+
+async function loadAnalytics() {
+  if (analyticsLoaded) return;
+  try {
+    const res = await fetch('/api/analytics');
+    if (!res.ok) throw new Error('Failed to load analytics');
+    const data = await res.json();
+    analyticsLoaded = true;
+    renderAnalytics(data);
+  } catch (e) {
+    console.error('Analytics error:', e);
+  }
+}
+
+function renderAnalytics(data) {
+  const k = data.kpis;
+  $('kpiCustomers').textContent = k.total_customers.toLocaleString();
+  $('kpiLoans').textContent = k.total_loans.toLocaleString();
+  $('kpiKyc').textContent = k.total_kyc_documents.toLocaleString();
+  $('kpiTotalLoan').textContent = '$' + Math.round(k.total_loan_amount).toLocaleString();
+  $('kpiAvgLoan').textContent = '$' + Math.round(k.avg_loan_amount).toLocaleString();
+
+  renderBarChart('chartLoanStatus', data.loan_status, '_id', 'count', d => (d._id || 'unknown').toUpperCase());
+  renderBarChart('chartLoanPurpose', data.loan_by_purpose, '_id', 'count', d => d._id || 'other');
+  renderBarChart('chartRisk', data.risk_distribution, '_id', 'count', d => {
+    const b = d._id;
+    if (b === 0) return '0-399';
+    if (b === 400) return '400-599';
+    if (b === 600) return '600-699';
+    if (b === 700) return '700-850';
+    return String(b);
+  });
+  renderBarChart('chartEmployment', data.employment, '_id', 'count', d => (d._id || 'unknown').replace(/_/g,' '));
+}
+
+function renderBarChart(containerId, data, labelKey, valueKey, labelFn) {
+  const el = $(containerId);
+  if (!data || !data.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No data</div>'; return; }
+  const maxVal = Math.max(...data.map(d => d[valueKey] || 0));
+  el.innerHTML = data.map((d, i) => {
+    const val = d[valueKey] || 0;
+    const pct = maxVal > 0 ? (val / maxVal * 100) : 0;
+    const label = labelFn ? labelFn(d) : (d[labelKey] || '');
+    const color = BAR_COLORS[i % BAR_COLORS.length];
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:0">'
+      + '<div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:4px">' + val.toLocaleString() + '</div>'
+      + '<div style="width:100%;max-width:60px;height:' + Math.max(pct * 1.6, 8) + 'px;background:' + color + ';border-radius:4px 4px 0 0;transition:height .5s"></div>'
+      + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   ASK YOUR DATA: NL → MongoDB Aggregation
+   ═══════════════════════════════════════════════════════ */
+let askHistory = [];
+
+function askSuggestion(btn) {
+  $('askDataInput').value = btn.textContent;
+  askData();
+}
+
+async function askData() {
+  const input = $('askDataInput');
+  const q = input.value.trim();
+  if (!q) return;
+
+  const btn = $('askDataBtn');
+  const spinner = $('askDataSpinner');
+  const resultDiv = $('askDataResult');
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+  resultDiv.classList.remove('hidden');
+  resultDiv.innerHTML = '<div style="text-align:center;padding:24px"><span class="spinner"></span><div style="margin-top:8px;font-size:13px;color:var(--text-muted)">Claude is generating a MongoDB aggregation pipeline...</div></div>';
+
+  try {
+    const res = await fetch('/api/ask-data?q=' + encodeURIComponent(q), { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Request failed');
+    }
+    const data = await res.json();
+    renderAskDataResult(data);
+    askHistory.unshift(data);
+    renderAskDataHistory();
+  } catch (e) {
+    resultDiv.innerHTML = '<div class="card" style="border-color:#ef4444;background:#fef2f2;padding:20px"><strong style="color:#dc2626">Error:</strong> <span style="color:#7f1d1d">' + escapeHtml(e.message) + '</span></div>';
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+  }
+}
+
+function renderAskDataResult(data) {
+  const r = $('askDataResult');
+  let html = '';
+
+  if (data.error) {
+    html += '<div class="card" style="border-color:#ef4444;padding:16px"><strong style="color:#dc2626">Error:</strong> ' + escapeHtml(data.error) + '</div>';
+    if (data.raw_response) {
+      html += '<div class="card" style="background:#0d1117;border:1px solid #30363d;padding:16px"><pre style="margin:0;font-size:11px;color:#c9d1d9;white-space:pre-wrap">' + escapeHtml(data.raw_response) + '</pre></div>';
+    }
+    r.innerHTML = html;
+    return;
+  }
+
+  // Pipeline transparency
+  html += '<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:20px;margin-bottom:16px">';
+  html += '<div style="color:#58a6ff;font-weight:700;font-size:13px;margin-bottom:12px">🔬 Query Pipeline</div>';
+
+  html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">① Natural Language → MongoDB Aggregation (Claude)</div>';
+  html += '<div style="color:#c9d1d9;font-size:12px">Latency: <strong>' + data.llm_latency_ms + 'ms</strong>';
+  if (data.usage) html += ' | Tokens: <strong>' + (data.usage.input_tokens||0) + ' in / ' + (data.usage.output_tokens||0) + ' out</strong>';
+  html += '</div></div>';
+
+  html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">② Execute on MongoDB Atlas</div>';
+  html += '<div style="color:#c9d1d9;font-size:12px">Collection: <strong>' + (data.generated_pipeline?.collection||'') + '</strong> | Latency: <strong>' + (data.query_latency_ms||0) + 'ms</strong> | Rows: <strong>' + (data.result_count||0) + '</strong></div>';
+  html += '</div>';
+
+  // Show generated pipeline
+  html += '<div style="padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#7ee787;font-size:11px;font-weight:600;margin-bottom:6px">Generated Aggregation Pipeline</div>';
+  html += '<pre style="margin:0;font-size:11px;color:#c9d1d9;white-space:pre-wrap;overflow-x:auto">db.' + (data.generated_pipeline?.collection||'') + '.aggregate(\n' + JSON.stringify(data.generated_pipeline?.pipeline||[], null, 2) + '\n)</pre>';
+  html += '</div></div>';
+
+  // Results table
+  const results = data.results || [];
+  if (results.length > 0) {
+    const allKeys = [];
+    results.forEach(row => { Object.keys(row).forEach(k => { if (!allKeys.includes(k) && k !== '_id') allKeys.push(k); }); });
+    html += '<div class="card"><div class="card-header"><h3>Results</h3><span class="badge badge-success">' + data.result_count + ' ROWS</span></div>';
+    html += '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">';
+    html += '<tr>' + allKeys.map(k => '<th style="text-align:left;padding:8px;border-bottom:2px solid var(--border);color:var(--text-muted);white-space:nowrap">' + escapeHtml(k) + '</th>').join('') + '</tr>';
+    results.slice(0, 25).forEach(row => {
+      html += '<tr>' + allKeys.map(k => {
+        let v = row[k];
+        if (v === null || v === undefined) v = '—';
+        else if (typeof v === 'object') v = JSON.stringify(v);
+        else if (typeof v === 'number') v = Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, {maximumFractionDigits:2});
+        else v = String(v);
+        return '<td style="padding:8px;border-bottom:1px solid var(--border);color:var(--text-primary)">' + escapeHtml(String(v)) + '</td>';
+      }).join('') + '</tr>';
+    });
+    html += '</table></div></div>';
+  }
+
+  r.innerHTML = html;
+}
+
+function renderAskDataHistory() {
+  const el = $('askDataHistory');
+  if (askHistory.length <= 1) { el.innerHTML = ''; return; }
+  let html = '<div class="card"><div class="card-header"><h3>Previous Queries</h3></div>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px">';
+  askHistory.slice(1, 8).forEach(item => {
+    const ok = !item.error;
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-tertiary);border-radius:6px;cursor:pointer" onclick="$(' + "'askDataInput'" + ').value=' + JSON.stringify(item.query) + ';askData()">';
+    html += '<span style="font-size:14px">' + (ok ? '✅' : '❌') + '</span>';
+    html += '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(item.query) + '</div>';
+    html += '<div style="font-size:11px;color:var(--text-muted)">' + (ok ? (item.result_count||0) + ' rows | ' + (item.llm_latency_ms||0) + 'ms' : 'Error') + '</div></div></div>';
+  });
+  html += '</div></div>';
+  el.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
    RENDER: Settings page
    ═══════════════════════════════════════════════════════ */
 function renderSettings() {
@@ -947,10 +1233,13 @@ function showCustomerPage(page) {
    EMPLOYEE TABS
    ═══════════════════════════════════════════════════════ */
 function showEmpTab(tab) {
-  $('tab-credit').classList.toggle('hidden', tab !== 'credit');
-  $('tab-kyc').classList.toggle('hidden', tab !== 'kyc');
+  ['credit', 'kyc', 'analytics', 'askdata'].forEach(t => {
+    const el = $('tab-' + t);
+    if (el) el.classList.toggle('hidden', tab !== t);
+  });
   document.querySelectorAll('#employeePortal .sidebar .nav-item').forEach(n => n.classList.remove('active'));
   event?.target?.closest?.('.nav-item')?.classList.add('active');
+  if (tab === 'analytics') loadAnalytics();
 }
 
 /* ═══════════════════════════════════════════════════════
