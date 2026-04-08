@@ -336,9 +336,23 @@ tr:hover{background:var(--surface)}
       <div id="loansContainer">
         <div class="loading-row"><span class="spinner"></span> Loading loan data...</div>
       </div>
-      <div class="card" style="text-align:center;padding:40px;color:var(--text-muted)">
-        <p style="font-size:15px">Looking for a new loan?</p>
-        <p style="font-size:13px;margin-top:4px">Chat with our AI assistant for instant answers about rates and eligibility.</p>
+      <!-- Apply for New Loan -->
+      <div class="card" id="loanApplyCard">
+        <div class="card-header">
+          <h3>📄 Apply for New Loan</h3>
+        </div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Upload a supporting document (payslip, bank statement, or tax return) as a PDF. We'll extract the details automatically using OCR.</p>
+        <div style="border:2px dashed var(--border);border-radius:10px;padding:32px;text-align:center;transition:all .2s;cursor:pointer" id="loanDropZone"
+             ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(37,99,235,.04)'"
+             ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent'"
+             ondrop="event.preventDefault();this.style.borderColor='var(--border)';this.style.background='transparent';handleLoanPDF(event.dataTransfer.files[0])"
+             onclick="document.getElementById('loanFileInput').click()">
+          <input type="file" id="loanFileInput" accept=".pdf" style="display:none" onchange="handleLoanPDF(this.files[0])">
+          <div style="font-size:32px;margin-bottom:8px">📤</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text-primary)">Drop a PDF here or click to upload</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Supports payslips, bank statements, tax returns (max 10 MB)</div>
+        </div>
+        <div id="loanOcrResult" class="hidden" style="margin-top:20px"></div>
       </div>
     </div>
 
@@ -695,6 +709,103 @@ function renderLoansPage() {
       '</div></div>';
   });
   container.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LOAN: PDF Upload + OCR
+   ═══════════════════════════════════════════════════════ */
+async function handleLoanPDF(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    alert('Please upload a PDF file.');
+    return;
+  }
+  if (!activeCustomer) {
+    alert('Please select a customer first.');
+    return;
+  }
+
+  const resultDiv = $('loanOcrResult');
+  resultDiv.classList.remove('hidden');
+  resultDiv.innerHTML = '<div style="text-align:center;padding:24px"><span class="spinner"></span><div style="margin-top:8px;font-size:13px;color:var(--text-muted)">Extracting text from <strong>' + file.name + '</strong> via PyMuPDF OCR...</div></div>';
+
+  const dropZone = $('loanDropZone');
+  dropZone.style.opacity = '0.5';
+  dropZone.style.pointerEvents = 'none';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const custId = activeCustomer._id || activeCustomer.id;
+    const res = await fetch('/api/loan-application/upload?customer_id=' + encodeURIComponent(custId), {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    const data = await res.json();
+    renderOcrResult(data, file.name);
+  } catch (e) {
+    resultDiv.innerHTML = '<div class="card" style="border-color:#ef4444;background:#fef2f2;padding:20px"><strong style="color:#dc2626">Error:</strong> <span style="color:#7f1d1d">' + e.message + '</span></div>';
+  } finally {
+    dropZone.style.opacity = '1';
+    dropZone.style.pointerEvents = 'auto';
+  }
+}
+
+function renderOcrResult(data, filename) {
+  const r = $('loanOcrResult');
+  let html = '';
+
+  // Pipeline evidence panel
+  html += '<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:20px;margin-bottom:16px">';
+  html += '<div style="color:#58a6ff;font-weight:700;font-size:13px;margin-bottom:12px">🔬 Document Processing Pipeline</div>';
+
+  // Step 1: Upload
+  html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">① PDF Upload</div>';
+  html += '<div style="color:#c9d1d9;font-size:12px">File: <strong>' + filename + '</strong> | Size: ' + (data.file_size_bytes ? (data.file_size_bytes / 1024).toFixed(1) + ' KB' : '—') + ' | Pages: <strong>' + data.page_count + '</strong></div>';
+  html += '</div>';
+
+  // Step 2: OCR extraction
+  html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">② Text Extraction (PyMuPDF OCR)</div>';
+  html += '<div style="color:#c9d1d9;font-size:12px">Method: <strong>' + data.extraction_method + '</strong> | Characters extracted: <strong>' + data.total_characters.toLocaleString() + '</strong> | Latency: <strong>' + data.extraction_ms + 'ms</strong></div>';
+  html += '</div>';
+
+  // Step 3: MongoDB storage
+  html += '<div style="padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">③ Stored in MongoDB Atlas</div>';
+  html += '<div style="color:#c9d1d9;font-size:12px">Collection: <strong>' + data.mongodb_collection + '</strong> | Document ID: <code style="background:#0d1117;padding:2px 6px;border-radius:3px;font-size:11px">' + data.mongodb_document_id + '</code></div>';
+  html += '</div>';
+  html += '</div>';
+
+  // Extracted text preview
+  html += '<div class="card"><div class="card-header"><h3>Extracted Text</h3><span class="badge badge-success">OCR COMPLETE</span></div>';
+  html += '<div style="max-height:300px;overflow-y:auto;padding:16px;background:var(--bg-tertiary);border-radius:8px;font-family:monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--text-primary)">';
+  html += escapeHtml(data.extracted_text || '(no text extracted)');
+  html += '</div></div>';
+
+  // Per-page breakdown
+  if (data.pages && data.pages.length > 1) {
+    html += '<div class="card"><div class="card-header"><h3>Page Breakdown</h3></div>';
+    html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+    html += '<tr style="border-bottom:2px solid var(--border)"><th style="text-align:left;padding:8px;color:var(--text-muted)">Page</th><th style="text-align:left;padding:8px;color:var(--text-muted)">Characters</th><th style="text-align:left;padding:8px;color:var(--text-muted)">Preview</th></tr>';
+    data.pages.forEach(p => {
+      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;font-weight:600">' + p.page + '</td><td style="padding:8px">' + p.char_count.toLocaleString() + '</td><td style="padding:8px;color:var(--text-muted)">' + escapeHtml((p.text || '').substring(0, 80)) + '…</td></tr>';
+    });
+    html += '</table></div>';
+  }
+
+  r.innerHTML = html;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 /* ═══════════════════════════════════════════════════════

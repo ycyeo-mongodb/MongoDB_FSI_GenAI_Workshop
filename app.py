@@ -17,7 +17,7 @@ import base64
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 import requests
@@ -759,4 +759,79 @@ async def api_lambda_logs(
         "bedrock_events": bedrock_events,
         "raw_events": raw_events,
     }
+
+
+# ──────────────────────────────────────────────────────────
+# OCR: PDF text extraction → MongoDB
+# ──────────────────────────────────────────────────────────
+
+@app.post("/api/loan-application/upload")
+async def api_loan_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    customer_id: str = Query(...),
+) -> dict[str, Any]:
+    """
+    Accept a PDF upload, extract text via PyMuPDF (OCR),
+    store the extracted data as a new loan support document in MongoDB,
+    and return the extracted text + metadata.
+    """
+    import fitz  # pymupdf
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
+    t0 = time.time()
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    pages = []
+    full_text = ""
+    for i, page in enumerate(doc):
+        text = page.get_text("text")
+        pages.append({"page": i + 1, "text": text, "char_count": len(text)})
+        full_text += text + "\n"
+    doc.close()
+
+    extraction_ms = round((time.time() - t0) * 1000)
+
+    try:
+        cust_oid = ObjectId(customer_id)
+    except InvalidId:
+        cust_oid = None
+
+    record = {
+        "customer_id": cust_oid,
+        "filename": file.filename,
+        "content_type": file.content_type or "application/pdf",
+        "file_size_bytes": len(pdf_bytes),
+        "page_count": len(pages),
+        "extracted_text": full_text.strip(),
+        "pages": pages,
+        "extraction_method": "pymupdf",
+        "extraction_ms": extraction_ms,
+        "uploaded_at": datetime.utcnow(),
+        "type": "loan_support_document",
+    }
+
+    db = request.app.state.db
+    result = db.loan_support_docs.insert_one(record)
+    record_id = str(result.inserted_id)
+
+    return _serialize({
+        "status": "success",
+        "document_id": record_id,
+        "filename": file.filename,
+        "page_count": len(pages),
+        "total_characters": len(full_text.strip()),
+        "extraction_ms": extraction_ms,
+        "extraction_method": "pymupdf",
+        "pages": pages,
+        "extracted_text": full_text.strip()[:3000],
+        "mongodb_collection": "banking.loan_support_docs",
+        "mongodb_document_id": record_id,
+    })
 
