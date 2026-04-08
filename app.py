@@ -762,8 +762,31 @@ async def api_lambda_logs(
 
 
 # ──────────────────────────────────────────────────────────
-# OCR: PDF text extraction → MongoDB
+# Document Intelligence: Bedrock Claude multimodal extraction → MongoDB
 # ──────────────────────────────────────────────────────────
+
+ALLOWED_UPLOAD_TYPES: dict[str, str] = {
+    "application/pdf": "document",
+    "image/png": "image",
+    "image/jpeg": "image",
+    "image/jpg": "image",
+    "image/webp": "image",
+}
+
+EXTRACTION_PROMPT = (
+    "You are a document data extraction specialist for a bank.\n"
+    "Analyze this uploaded document and extract ALL text, numbers, and structured data you can find.\n"
+    "Return your response in the following JSON format (no markdown fences):\n"
+    "{\n"
+    '  "document_type": "<type e.g. payslip, bank_statement, invoice, id_card, utility_bill, etc.>",\n'
+    '  "extracted_fields": { "<field_name>": "<value>", ... },\n'
+    '  "full_text": "<all readable text from the document>",\n'
+    '  "confidence": "<high|medium|low>",\n'
+    '  "summary": "<1-2 sentence summary of what this document contains>"\n'
+    "}\n"
+    "Extract every field you can identify (names, dates, amounts, account numbers, addresses, etc.)."
+)
+
 
 @app.post("/api/loan-application/upload")
 async def api_loan_upload(
@@ -772,31 +795,75 @@ async def api_loan_upload(
     customer_id: str = Query(...),
 ) -> dict[str, Any]:
     """
-    Accept a PDF upload, extract text via PyMuPDF (OCR),
-    store the extracted data as a new loan support document in MongoDB,
-    and return the extracted text + metadata.
+    Accept a document upload (PDF, PNG, JPG), send it to Amazon Bedrock Claude
+    for intelligent extraction, store the results in MongoDB.
     """
-    import fitz  # pymupdf
+    content_type = (file.content_type or "").lower()
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if file.filename else ""
+    ext_to_mime = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+    if content_type not in ALLOWED_UPLOAD_TYPES:
+        content_type = ext_to_mime.get(ext, content_type)
+    if content_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type. Accepted: PDF, PNG, JPG, WEBP")
 
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
-
-    pdf_bytes = await file.read()
-    if len(pdf_bytes) > 10 * 1024 * 1024:
+    file_bytes = await file.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
 
+    file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+    block_type = ALLOWED_UPLOAD_TYPES[content_type]
+
+    if block_type == "document":
+        media_block = {
+            "type": "document",
+            "source": {"type": "base64", "media_type": content_type, "data": file_b64},
+        }
+    else:
+        media_block = {
+            "type": "image",
+            "source": {"type": "base64", "media_type": content_type, "data": file_b64},
+        }
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                media_block,
+                {"type": "text", "text": EXTRACTION_PROMPT},
+            ],
+        }
+    ]
+
+    llm_url: str = request.app.state.llm_url
     t0 = time.time()
-
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages = []
-    full_text = ""
-    for i, page in enumerate(doc):
-        text = page.get_text("text")
-        pages.append({"page": i + 1, "text": text, "char_count": len(text)})
-        full_text += text + "\n"
-    doc.close()
-
+    try:
+        resp = requests.post(llm_url, json={"messages": messages}, timeout=90)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Bedrock extraction failed: {exc}") from exc
     extraction_ms = round((time.time() - t0) * 1000)
+
+    data = resp.json()
+    if "error" in data:
+        raise HTTPException(status_code=502, detail=f"Bedrock error: {data['error']}")
+
+    raw_answer = (data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
+    bedrock_model = data.get("model", "")
+    usage = data.get("usage", {})
+
+    extracted: dict[str, Any] = {}
+    try:
+        extracted = json.loads(raw_answer)
+    except json.JSONDecodeError:
+        cleaned = raw_answer
+        if "```json" in cleaned:
+            cleaned = cleaned.split("```json", 1)[1].rsplit("```", 1)[0]
+        elif "```" in cleaned:
+            cleaned = cleaned.split("```", 1)[1].rsplit("```", 1)[0]
+        try:
+            extracted = json.loads(cleaned.strip())
+        except json.JSONDecodeError:
+            extracted = {"full_text": raw_answer, "document_type": "unknown", "confidence": "low"}
 
     try:
         cust_oid = ObjectId(customer_id)
@@ -806,13 +873,18 @@ async def api_loan_upload(
     record = {
         "customer_id": cust_oid,
         "filename": file.filename,
-        "content_type": file.content_type or "application/pdf",
-        "file_size_bytes": len(pdf_bytes),
-        "page_count": len(pages),
-        "extracted_text": full_text.strip(),
-        "pages": pages,
-        "extraction_method": "pymupdf",
+        "content_type": content_type,
+        "file_size_bytes": len(file_bytes),
+        "document_type": extracted.get("document_type", "unknown"),
+        "extracted_fields": extracted.get("extracted_fields", {}),
+        "full_text": extracted.get("full_text", ""),
+        "summary": extracted.get("summary", ""),
+        "confidence": extracted.get("confidence", ""),
+        "extraction_method": "bedrock_claude",
+        "bedrock_model": bedrock_model,
         "extraction_ms": extraction_ms,
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
         "uploaded_at": datetime.utcnow(),
         "type": "loan_support_document",
     }
@@ -825,12 +897,16 @@ async def api_loan_upload(
         "status": "success",
         "document_id": record_id,
         "filename": file.filename,
-        "page_count": len(pages),
-        "total_characters": len(full_text.strip()),
+        "content_type": content_type,
+        "document_type": extracted.get("document_type", "unknown"),
+        "extracted_fields": extracted.get("extracted_fields", {}),
+        "full_text": extracted.get("full_text", "")[:5000],
+        "summary": extracted.get("summary", ""),
+        "confidence": extracted.get("confidence", ""),
+        "extraction_method": "bedrock_claude",
+        "bedrock_model": bedrock_model,
         "extraction_ms": extraction_ms,
-        "extraction_method": "pymupdf",
-        "pages": pages,
-        "extracted_text": full_text.strip()[:3000],
+        "usage": usage,
         "mongodb_collection": "banking.loan_support_docs",
         "mongodb_document_id": record_id,
     })
