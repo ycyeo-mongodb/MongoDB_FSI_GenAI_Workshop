@@ -911,3 +911,53 @@ async def api_loan_upload(
         "mongodb_document_id": record_id,
     })
 
+
+@app.post("/api/loan-application/vectorize")
+async def api_loan_vectorize(
+    request: Request,
+    document_id: str = Query(...),
+) -> dict[str, Any]:
+    """
+    Generate a Voyage AI embedding for a previously extracted document
+    and store it back in MongoDB — completing the vector-ready pipeline.
+    """
+    db = request.app.state.db
+    voyage_client: voyageai.Client = request.app.state.voyage
+
+    doc_oid = parse_object_id(document_id, "document_id")
+    doc = db.loan_support_docs.find_one({"_id": doc_oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    text_to_embed = doc.get("summary", "") + "\n" + doc.get("full_text", "")
+    fields = doc.get("extracted_fields", {})
+    if fields:
+        text_to_embed += "\n" + " ".join(f"{k}: {v}" for k, v in fields.items())
+    text_to_embed = text_to_embed.strip()
+    if not text_to_embed:
+        raise HTTPException(status_code=400, detail="No extracted text to vectorize")
+
+    t0 = time.time()
+    embedding = get_query_embedding(voyage_client, text_to_embed[:8000])
+    embed_ms = round((time.time() - t0) * 1000)
+
+    db.loan_support_docs.update_one(
+        {"_id": doc_oid},
+        {"$set": {
+            EMBEDDING_FIELD: embedding,
+            "embedding_model": VOYAGE_EMBED_MODEL,
+            "embedding_dimensions": len(embedding),
+            "vectorized_at": datetime.utcnow(),
+        }},
+    )
+
+    return {
+        "status": "success",
+        "document_id": document_id,
+        "embedding_model": VOYAGE_EMBED_MODEL,
+        "dimensions": len(embedding),
+        "embed_latency_ms": embed_ms,
+        "text_length": len(text_to_embed),
+        "mongodb_collection": "banking.loan_support_docs",
+    }
+
