@@ -868,10 +868,24 @@ Collections and their fields:
 5. kyc_documents:
    - _id (ObjectId), customer_id (string), document_type (national_id|passport|drivers_license)
    - document_number, issue_date, expiry_date, verification_status (pending|verified|rejected)
-   - risk_flags (array of strings)
+   - risk_flags (array of strings), description (string)
+   - description_embedding (1024-dim vector, Voyage AI voyage-4-large)
+   - VECTOR INDEX: "kyc_vector_index" on field "description_embedding"
 
 6. bank_products:
    - _id (ObjectId), name, description, category, features (array)
+   - embedding (1024-dim vector, Voyage AI voyage-4-large)
+   - VECTOR INDEX: "product_vector_index" on field "embedding"
+
+7. faq_chunks:
+   - _id (ObjectId), title, content_en, content_km, category
+   - embedding (1024-dim vector, Voyage AI voyage-4-large)
+   - VECTOR INDEX: "faq_vector_index" on field "embedding"
+
+8. loan_support_docs:
+   - _id (ObjectId), customer_id (ObjectId), filename, content_type
+   - document_type, extracted_fields (object), full_text, summary, confidence
+   - embedding (1024-dim vector, Voyage AI voyage-4-large) — may not exist on all docs
 """
 
 ASK_DATA_SYSTEM_PROMPT = (
@@ -879,14 +893,26 @@ ASK_DATA_SYSTEM_PROMPT = (
     "Given the database schema below and a user's natural language question, "
     "generate a MongoDB aggregation pipeline that answers the question.\n\n"
     + SCHEMA_CONTEXT +
-    "\n\nRules:\n"
-    "- Return ONLY valid JSON with this structure: {\"collection\": \"<name>\", \"pipeline\": [<stages>]}\n"
-    "- Use proper MongoDB aggregation operators ($match, $group, $sort, $project, $lookup, $unwind, $addFields, $bucket, $limit, etc.)\n"
-    "- For ObjectId references, use string comparison where needed since customer_id may be stored as ObjectId or string.\n"
-    "- Keep pipelines efficient — limit results to 20 rows max.\n"
-    "- Always include a $project or $group that produces human-readable field names.\n"
-    "- Do NOT wrap in markdown fences.\n"
-    "- If the question cannot be answered from the schema, return {\"error\": \"<reason>\"}.\n"
+    "\n\nYou can use TWO types of queries:\n\n"
+    "TYPE 1 — Standard Aggregation (for analytical/counting/filtering questions):\n"
+    "Return: {\"collection\": \"<name>\", \"pipeline\": [<stages>]}\n"
+    "Use operators like $match, $group, $sort, $project, $lookup, $unwind, $addFields, $bucket, $limit.\n\n"
+    "TYPE 2 — Vector Search (for semantic/similarity/meaning-based questions):\n"
+    "Return: {\"collection\": \"<name>\", \"pipeline\": [<stages>], \"vector_search\": {\"search_text\": \"<the text to search for>\", \"index\": \"<index_name>\", \"path\": \"<embedding_field>\", \"limit\": <n>}}\n"
+    "When vector_search is present, the backend will:\n"
+    "  1. Generate a 1024-dim embedding from search_text using Voyage AI\n"
+    "  2. Prepend a $vectorSearch stage to the pipeline using the real vector\n"
+    "  3. Execute the full pipeline\n"
+    "Use this for questions like 'find FAQs about X', 'find products similar to Y', 'search documents about Z'.\n"
+    "The pipeline stages you provide will run AFTER the $vectorSearch stage.\n"
+    "Always add {\"$addFields\": {\"score\": {\"$meta\": \"vectorSearchScore\"}}} as your first pipeline stage.\n\n"
+    "Rules:\n"
+    "- Return ONLY valid JSON (no markdown fences)\n"
+    "- For ObjectId references, use string comparison where needed\n"
+    "- Limit results to 20 rows max\n"
+    "- Always produce human-readable field names in output\n"
+    "- If the question cannot be answered, return {\"error\": \"<reason>\"}\n"
+    "- Decide between Type 1 and Type 2 based on whether the question needs semantic understanding or exact filtering/aggregation\n"
 )
 
 
@@ -940,34 +966,92 @@ async def api_ask_data(
 
     collection_name = parsed.get("collection", "")
     pipeline = parsed.get("pipeline", [])
+    vector_search_spec = parsed.get("vector_search")
 
     if collection_name not in ("customers", "loan_applications", "accounts",
                                 "transactions", "kyc_documents", "bank_products",
                                 "loan_support_docs", "faq_chunks"):
         return {"query": q, "error": f"Unknown collection: {collection_name}"}
 
+    # If Claude requested vector search, generate embedding and prepend $vectorSearch
+    embed_ms = 0
+    vector_search_meta: dict[str, Any] = {}
+    if vector_search_spec and isinstance(vector_search_spec, dict):
+        voyage_client: voyageai.Client = request.app.state.voyage
+        search_text = vector_search_spec.get("search_text", q)
+        index_name = vector_search_spec.get("index", "")
+        path = vector_search_spec.get("path", EMBEDDING_FIELD)
+        vs_limit = int(vector_search_spec.get("limit", 10))
+
+        t_embed = time.time()
+        query_vector = get_query_embedding(voyage_client, search_text)
+        embed_ms = round((time.time() - t_embed) * 1000)
+
+        vs_stage = {
+            "$vectorSearch": {
+                "index": index_name,
+                "path": path,
+                "queryVector": query_vector,
+                "numCandidates": min(200, max(50, vs_limit * 20)),
+                "limit": vs_limit,
+            }
+        }
+        pipeline = [vs_stage] + pipeline
+
+        vector_search_meta = {
+            "search_text": search_text,
+            "index": index_name,
+            "path": path,
+            "embedding_model": VOYAGE_EMBED_MODEL,
+            "dimensions": len(query_vector),
+            "embed_latency_ms": embed_ms,
+        }
+
     t1 = time.time()
     try:
         results = list(db[collection_name].aggregate(pipeline))
     except Exception as exc:
+        # Build a readable pipeline (replace raw vector with placeholder)
+        display_pipeline = _make_display_pipeline(pipeline)
         return {
             "query": q,
-            "generated_pipeline": {"collection": collection_name, "pipeline": pipeline},
+            "generated_pipeline": {"collection": collection_name, "pipeline": display_pipeline},
             "error": f"Aggregation error: {str(exc)}",
             "llm_latency_ms": llm_ms,
+            "embed_latency_ms": embed_ms,
             "usage": usage,
+            "vector_search": vector_search_meta or None,
         }
     query_ms = round((time.time() - t1) * 1000)
 
+    display_pipeline = _make_display_pipeline(pipeline)
+
     return _serialize({
         "query": q,
-        "generated_pipeline": {"collection": collection_name, "pipeline": pipeline},
+        "generated_pipeline": {"collection": collection_name, "pipeline": display_pipeline},
         "results": results[:50],
         "result_count": len(results),
         "llm_latency_ms": llm_ms,
+        "embed_latency_ms": embed_ms,
         "query_latency_ms": query_ms,
         "usage": usage,
+        "vector_search": vector_search_meta or None,
     })
+
+
+def _make_display_pipeline(pipeline: list) -> list:
+    """Replace raw queryVector arrays with a readable placeholder for the UI."""
+    out = []
+    for stage in pipeline:
+        if "$vectorSearch" in stage:
+            vs = dict(stage["$vectorSearch"])
+            qv = vs.get("queryVector")
+            if isinstance(qv, list) and len(qv) > 4:
+                vs["queryVector"] = f"<{len(qv)}-dim float vector>"
+            out.append({"$vectorSearch": vs})
+        else:
+            out.append(stage)
+    return out
 
 
 # ──────────────────────────────────────────────────────────

@@ -587,13 +587,16 @@ tr:hover{background:var(--surface)}
           </div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-          <span style="font-size:11px;color:var(--text-muted);margin-right:4px">Try:</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-right:4px">Aggregation:</span>
           <button class="ask-suggestion" onclick="askSuggestion(this)">How many loans are approved vs declined?</button>
           <button class="ask-suggestion" onclick="askSuggestion(this)">What is the average credit score by employment type?</button>
           <button class="ask-suggestion" onclick="askSuggestion(this)">Which customers have the highest monthly income?</button>
-          <button class="ask-suggestion" onclick="askSuggestion(this)">Show me loans over $50,000 with their customer names</button>
           <button class="ask-suggestion" onclick="askSuggestion(this)">What is the total loan amount by status?</button>
-          <button class="ask-suggestion" onclick="askSuggestion(this)">Count KYC documents by type and verification status</button>
+          <br>
+          <span style="font-size:11px;color:#00ed64;margin-right:4px">Vector Search:</span>
+          <button class="ask-suggestion" style="border-color:#00ed64;color:#00ed64" onclick="askSuggestion(this)">Find FAQs about opening a savings account</button>
+          <button class="ask-suggestion" style="border-color:#00ed64;color:#00ed64" onclick="askSuggestion(this)">Search for bank products related to home loans</button>
+          <button class="ask-suggestion" style="border-color:#00ed64;color:#00ed64" onclick="askSuggestion(this)">Find KYC documents similar to a Cambodian passport</button>
         </div>
       </div>
 
@@ -1123,19 +1126,41 @@ function renderAskDataResult(data) {
   }
 
   // Pipeline transparency
-  html += '<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:20px;margin-bottom:16px">';
-  html += '<div style="color:#58a6ff;font-weight:700;font-size:13px;margin-bottom:12px">🔬 Query Pipeline</div>';
+  const isVectorSearch = !!data.vector_search;
+  html += '<div style="background:#0d1117;border:1px solid ' + (isVectorSearch ? '#238636' : '#30363d') + ';border-radius:10px;padding:20px;margin-bottom:16px">';
+  html += '<div style="color:#58a6ff;font-weight:700;font-size:13px;margin-bottom:12px">🔬 Query Pipeline';
+  if (isVectorSearch) html += ' <span style="background:#238636;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;margin-left:8px">VECTOR SEARCH</span>';
+  html += '</div>';
 
+  // Step 1: Claude generates the query
+  let stepNum = 1;
   html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
-  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">① Natural Language → MongoDB Aggregation (Claude)</div>';
+  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">① Natural Language → MongoDB ' + (isVectorSearch ? '$vectorSearch + Aggregation' : 'Aggregation') + ' (Claude)</div>';
   html += '<div style="color:#c9d1d9;font-size:12px">Latency: <strong>' + data.llm_latency_ms + 'ms</strong>';
   if (data.usage) html += ' | Tokens: <strong>' + (data.usage.input_tokens||0) + ' in / ' + (data.usage.output_tokens||0) + ' out</strong>';
   html += '</div></div>';
 
-  html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
-  html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">② Execute on MongoDB Atlas</div>';
-  html += '<div style="color:#c9d1d9;font-size:12px">Collection: <strong>' + (data.generated_pipeline?.collection||'') + '</strong> | Latency: <strong>' + (data.query_latency_ms||0) + 'ms</strong> | Rows: <strong>' + (data.result_count||0) + '</strong></div>';
-  html += '</div>';
+  // Step 2 (vector search only): Embedding generation
+  if (isVectorSearch) {
+    const vs = data.vector_search;
+    html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px;border-left:3px solid #00ed64">';
+    html += '<div style="color:#00ed64;font-size:11px;font-weight:600;margin-bottom:4px">② Generate Embedding (Voyage AI)</div>';
+    html += '<div style="color:#c9d1d9;font-size:12px">';
+    html += 'Search text: <strong>"' + escapeHtml(vs.search_text || '') + '"</strong><br>';
+    html += 'Model: <strong>' + (vs.embedding_model || '') + '</strong> | Dimensions: <strong>' + (vs.dimensions || 0) + '</strong> | Latency: <strong>' + (vs.embed_latency_ms || 0) + 'ms</strong>';
+    html += '</div></div>';
+
+    html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px;border-left:3px solid #00ed64">';
+    html += '<div style="color:#00ed64;font-size:11px;font-weight:600;margin-bottom:4px">③ $vectorSearch on MongoDB Atlas</div>';
+    html += '<div style="color:#c9d1d9;font-size:12px">';
+    html += 'Index: <strong>' + (vs.index || '') + '</strong> | Path: <strong>' + (vs.path || '') + '</strong> | Collection: <strong>' + (data.generated_pipeline?.collection || '') + '</strong> | Query latency: <strong>' + (data.query_latency_ms||0) + 'ms</strong> | Rows: <strong>' + (data.result_count||0) + '</strong>';
+    html += '</div></div>';
+  } else {
+    html += '<div style="margin-bottom:10px;padding:10px;background:#161b22;border-radius:6px">';
+    html += '<div style="color:#8b949e;font-size:11px;font-weight:600;margin-bottom:4px">② Execute on MongoDB Atlas</div>';
+    html += '<div style="color:#c9d1d9;font-size:12px">Collection: <strong>' + (data.generated_pipeline?.collection||'') + '</strong> | Latency: <strong>' + (data.query_latency_ms||0) + 'ms</strong> | Rows: <strong>' + (data.result_count||0) + '</strong></div>';
+    html += '</div>';
+  }
 
   // Show generated pipeline
   html += '<div style="padding:10px;background:#161b22;border-radius:6px">';
@@ -1147,7 +1172,8 @@ function renderAskDataResult(data) {
   const results = data.results || [];
   if (results.length > 0) {
     const allKeys = [];
-    results.forEach(row => { Object.keys(row).forEach(k => { if (!allKeys.includes(k) && k !== '_id') allKeys.push(k); }); });
+    const HIDE_KEYS = ['_id','embedding','description_embedding','embedding_model','pdf_data','pdf_data_b64'];
+    results.forEach(row => { Object.keys(row).forEach(k => { if (!allKeys.includes(k) && !HIDE_KEYS.includes(k)) allKeys.push(k); }); });
     html += '<div class="card"><div class="card-header"><h3>Results</h3><span class="badge badge-success">' + data.result_count + ' ROWS</span></div>';
     html += '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">';
     html += '<tr>' + allKeys.map(k => '<th style="text-align:left;padding:8px;border-bottom:2px solid var(--border);color:var(--text-muted);white-space:nowrap">' + escapeHtml(k) + '</th>').join('') + '</tr>';
