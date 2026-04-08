@@ -386,6 +386,10 @@ tr:hover{background:var(--surface)}
       <div class="nav-item" onclick="showEmpTab('kyc')"><span class="icon">🔍</span>KYC Verification</div>
     </div>
     <div class="nav-group">
+      <div class="nav-group-title">Marketing</div>
+      <div class="nav-item" onclick="showEmpTab('intel')"><span class="icon">🎯</span>Customer Intelligence</div>
+    </div>
+    <div class="nav-group">
       <div class="nav-group-title">Analytics</div>
       <div class="nav-item" onclick="showEmpTab('analytics')"><span class="icon">📈</span>Dashboard</div>
       <div class="nav-item" onclick="showEmpTab('askdata')"><span class="icon">🤖</span>Ask Your Data</div>
@@ -602,6 +606,27 @@ tr:hover{background:var(--surface)}
 
       <div id="askDataResult" class="hidden" style="margin-top:16px"></div>
       <div id="askDataHistory" style="margin-top:16px"></div>
+    </div>
+
+    <!-- Customer Intelligence Tab -->
+    <div id="tab-intel" class="hidden">
+      <h2 class="section-title">🎯 Customer Intelligence</h2>
+      <p class="section-subtitle">AI-powered customer 360 view. Uses <strong>MongoDB $lookup</strong> to aggregate all customer data, <strong>Atlas Vector Search</strong> to find matching products, and <strong>Amazon Bedrock (Claude)</strong> to generate personalised marketing campaigns.</p>
+
+      <div class="card">
+        <div style="display:flex;gap:12px;align-items:flex-end">
+          <div class="form-group" style="flex:1">
+            <label>Select Customer</label>
+            <select id="intelCustomerSelect" onchange="$('intelBtn').disabled=!this.value"><option value="">Loading customers...</option></select>
+          </div>
+          <button class="btn btn-primary" id="intelBtn" onclick="runCustomerIntel()" disabled style="white-space:nowrap">
+            <span class="spinner hidden" id="intelSpinner"></span>
+            Generate Intelligence
+          </button>
+        </div>
+      </div>
+
+      <div id="intelResult" class="hidden" style="margin-top:16px"></div>
     </div>
 
   </div>
@@ -1210,6 +1235,165 @@ function renderAskDataHistory() {
 }
 
 /* ═══════════════════════════════════════════════════════
+   CUSTOMER INTELLIGENCE
+   ═══════════════════════════════════════════════════════ */
+async function runCustomerIntel() {
+  const cid = $('intelCustomerSelect').value;
+  if (!cid) return;
+  const btn = $('intelBtn');
+  const sp = $('intelSpinner');
+  const r = $('intelResult');
+  btn.disabled = true;
+  sp.classList.remove('hidden');
+  r.classList.remove('hidden');
+  r.innerHTML = '<div style="text-align:center;padding:40px"><span class="spinner"></span><div style="margin-top:12px;font-size:13px;color:var(--text-muted)">Building Customer 360 with <strong>$lookup</strong>, finding products with <strong>$vectorSearch</strong>, generating marketing intelligence with <strong>Claude</strong>...</div></div>';
+
+  try {
+    const res = await fetch('/api/customer-intelligence?customer_id=' + encodeURIComponent(cid));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || 'Request failed');
+    }
+    const data = await res.json();
+    renderIntelResult(data);
+  } catch (e) {
+    r.innerHTML = '<div class="card" style="border-color:#ef4444;background:#fef2f2;padding:20px"><strong style="color:#dc2626">Error:</strong> ' + escapeHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    sp.classList.add('hidden');
+  }
+}
+
+function renderIntelResult(data) {
+  const r = $('intelResult');
+  const c = data.customer || {};
+  const intel = data.intelligence || {};
+  const prods = data.matched_products || [];
+  const pipe = data.pipeline || {};
+  let html = '';
+
+  // ── Pipeline transparency ──
+  html += '<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:20px;margin-bottom:16px">';
+  html += '<div style="color:#58a6ff;font-weight:700;font-size:13px;margin-bottom:12px">🔬 Intelligence Pipeline</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
+
+  html += '<div style="padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#8b949e;font-size:10px;font-weight:600;margin-bottom:4px">① Customer 360 ($lookup)</div>';
+  html += '<div style="color:#c9d1d9;font-size:11px">5 collections joined | <strong>' + pipe.aggregation_ms + 'ms</strong></div>';
+  html += '</div>';
+
+  html += '<div style="padding:10px;background:#161b22;border-radius:6px;border-left:3px solid #00ed64">';
+  html += '<div style="color:#00ed64;font-size:10px;font-weight:600;margin-bottom:4px">② Product Match ($vectorSearch)</div>';
+  html += '<div style="color:#c9d1d9;font-size:11px">Embed: <strong>' + pipe.embed_ms + 'ms</strong> | Search: <strong>' + pipe.vector_search_ms + 'ms</strong></div>';
+  html += '</div>';
+
+  html += '<div style="padding:10px;background:#161b22;border-radius:6px">';
+  html += '<div style="color:#f0883e;font-size:10px;font-weight:600;margin-bottom:4px">③ Marketing AI (Claude)</div>';
+  html += '<div style="color:#c9d1d9;font-size:11px"><strong>' + pipe.llm_ms + 'ms</strong>';
+  if (pipe.usage) html += ' | ' + (pipe.usage.input_tokens||0) + '/' + (pipe.usage.output_tokens||0) + ' tokens';
+  html += '</div></div>';
+
+  html += '</div></div>';
+
+  // ── Customer profile + segment ──
+  const tierColors = {platinum:'#e5e7eb',gold:'#fbbf24',silver:'#9ca3af',bronze:'#d97706'};
+  const tierColor = tierColors[intel.lifetime_value_tier] || '#6b7280';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">';
+
+  // Left: profile card
+  html += '<div class="card">';
+  html += '<div class="card-header"><h3>' + escapeHtml(c.name) + '</h3></div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
+  html += '<div><span style="color:var(--text-muted)">Location:</span> <strong>' + escapeHtml(c.city + ', ' + c.country) + '</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Employment:</span> <strong>' + escapeHtml((c.employment||'').replace(/_/g,' ')) + '</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Income:</span> <strong>$' + (c.monthly_income||0).toLocaleString() + '/mo</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Credit Score:</span> <strong>' + (c.credit_score||0) + '</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Total Balance:</span> <strong>$' + (c.total_balance||0).toLocaleString() + '</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Loans:</span> <strong>' + (c.num_loans||0) + ' ($' + (c.total_loan_amount||0).toLocaleString() + ')</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Account Age:</span> <strong>' + (c.account_age_months||0) + ' months</strong></div>';
+  html += '<div><span style="color:var(--text-muted)">Payment History:</span> <strong>' + escapeHtml(c.payment_history||'') + '</strong></div>';
+  if (c.financial_goals) html += '<div style="grid-column:1/-1"><span style="color:var(--text-muted)">Goals:</span> <strong>' + escapeHtml(c.financial_goals) + '</strong></div>';
+  html += '</div></div>';
+
+  // Right: segment card
+  html += '<div class="card" style="border-left:4px solid ' + tierColor + '">';
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">';
+  html += '<div style="font-size:28px">🎯</div>';
+  html += '<div><div style="font-size:18px;font-weight:800;color:var(--text-primary)">' + escapeHtml(intel.segment || '') + '</div>';
+  html += '<div style="font-size:12px;color:var(--text-muted)">' + escapeHtml(intel.segment_description || '') + '</div></div>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html += '<div style="background:var(--bg-tertiary);border-radius:6px;padding:10px;text-align:center"><div style="font-size:11px;color:var(--text-muted)">Lifetime Value</div><div style="font-size:16px;font-weight:700;color:' + tierColor + ';text-transform:uppercase">' + (intel.lifetime_value_tier||'—') + '</div></div>';
+  html += '<div style="background:var(--bg-tertiary);border-radius:6px;padding:10px;text-align:center"><div style="font-size:11px;color:var(--text-muted)">Churn Risk</div><div style="font-size:16px;font-weight:700;color:' + ({low:'#22c55e',medium:'#f59e0b',high:'#ef4444'}[intel.risk_of_churn]||'#6b7280') + '">' + (intel.risk_of_churn||'—').toUpperCase() + '</div></div>';
+  html += '</div>';
+
+  if (intel.key_insights && intel.key_insights.length) {
+    html += '<div style="margin-top:12px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:6px">Key Insights</div>';
+    intel.key_insights.forEach(ins => {
+      html += '<div style="font-size:12px;color:var(--text-primary);padding:4px 0;border-bottom:1px solid var(--border)">• ' + escapeHtml(ins) + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+
+  // ── Next Best Action ──
+  if (intel.next_best_action) {
+    html += '<div class="card" style="border-left:4px solid var(--accent);padding:16px;margin-bottom:16px">';
+    html += '<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:4px">⚡ NEXT BEST ACTION</div>';
+    html += '<div style="font-size:15px;font-weight:600;color:var(--text-primary)">' + escapeHtml(intel.next_best_action) + '</div>';
+    html += '</div>';
+  }
+
+  // ── Campaigns ──
+  const campaigns = intel.campaigns || [];
+  if (campaigns.length) {
+    html += '<div class="card"><div class="card-header"><h3>Personalised Marketing Campaigns</h3><span class="badge badge-info">AI GENERATED</span></div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    const channelIcons = {email:'📧',sms:'📱',in_app:'💻',branch:'🏦'};
+    const convColors = {high:'#22c55e',medium:'#f59e0b',low:'#ef4444'};
+    campaigns.forEach(camp => {
+      html += '<div style="border:1px solid var(--border);border-radius:8px;padding:16px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+      html += '<span style="font-size:20px">' + (channelIcons[camp.channel]||'📢') + '</span>';
+      html += '<div><div style="font-size:13px;font-weight:700;color:var(--text-primary)">' + escapeHtml(camp.name||'') + '</div>';
+      html += '<div style="font-size:10px;color:var(--text-muted)">' + (camp.channel||'').toUpperCase() + ' | Conversion: <span style="color:' + (convColors[camp.expected_conversion]||'#6b7280') + ';font-weight:600">' + (camp.expected_conversion||'').toUpperCase() + '</span></div></div></div>';
+      html += '<div style="background:var(--bg-tertiary);border-radius:6px;padding:10px;font-size:12px;color:var(--text-primary);line-height:1.6;margin-bottom:8px;font-style:italic">"' + escapeHtml(camp.message||'') + '"</div>';
+      html += '<div style="font-size:11px;color:var(--text-muted)"><strong>Rationale:</strong> ' + escapeHtml(camp.rationale||'') + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // ── Cross-sell + Products ──
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">';
+
+  // Cross-sell
+  if (intel.cross_sell && intel.cross_sell.length) {
+    html += '<div class="card"><div class="card-header"><h3>Cross-Sell Opportunities</h3></div>';
+    intel.cross_sell.forEach(cs => {
+      html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-primary)">→ ' + escapeHtml(cs) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Matched products (vector search)
+  if (prods.length) {
+    html += '<div class="card"><div class="card-header"><h3>Product Matches</h3><span class="badge" style="background:#dcfce7;color:#166534">$vectorSearch</span></div>';
+    prods.forEach(p => {
+      const pct = Math.round((p.score||0) * 100);
+      html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">';
+      html += '<div style="min-width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#00684A,#00ED64);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700">' + pct + '%</div>';
+      html += '<div><div style="font-size:13px;font-weight:600;color:var(--text-primary)">' + escapeHtml(p.name) + '</div>';
+      html += '<div style="font-size:11px;color:var(--text-muted)">' + escapeHtml(p.description) + '</div></div></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  r.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
    RENDER: Settings page
    ═══════════════════════════════════════════════════════ */
 function renderSettings() {
@@ -1259,7 +1443,7 @@ function showCustomerPage(page) {
    EMPLOYEE TABS
    ═══════════════════════════════════════════════════════ */
 function showEmpTab(tab) {
-  ['credit', 'kyc', 'analytics', 'askdata'].forEach(t => {
+  ['credit', 'kyc', 'intel', 'analytics', 'askdata'].forEach(t => {
     const el = $('tab-' + t);
     if (el) el.classList.toggle('hidden', tab !== t);
   });
@@ -1446,11 +1630,18 @@ async function loadEmpCustomers() {
     window._allLoans = await loanRes.json();
     const sel = $('creditCustomerSelect');
     sel.innerHTML = '<option value="">— Select a customer —</option>';
+    const intelSel = $('intelCustomerSelect');
+    intelSel.innerHTML = '<option value="">— Select a customer —</option>';
     empCustomersCache.forEach(c => {
+      const label = (c.full_name || c.name || c._id) + (c.credit_score ? ' (CS: ' + c.credit_score + ')' : '');
       const o = document.createElement('option');
       o.value = c._id;
-      o.textContent = (c.full_name || c.name || c._id) + (c.credit_score ? ' (CS: ' + c.credit_score + ')' : '');
+      o.textContent = label;
       sel.appendChild(o);
+      const o2 = document.createElement('option');
+      o2.value = c._id;
+      o2.textContent = label;
+      intelSel.appendChild(o2);
     });
     sel.onchange = () => {
       const cid = sel.value;

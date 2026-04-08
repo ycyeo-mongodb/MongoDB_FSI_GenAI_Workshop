@@ -762,6 +762,215 @@ async def api_lambda_logs(
 
 
 # ──────────────────────────────────────────────────────────
+# Customer Intelligence: 360 view + AI marketing insights
+# ──────────────────────────────────────────────────────────
+
+CUSTOMER_INTEL_PROMPT = (
+    "You are a senior banking marketing strategist and data analyst.\n"
+    "Analyze this customer's complete profile and generate actionable marketing intelligence.\n\n"
+    "Return ONLY valid JSON (no markdown fences) with this structure:\n"
+    "{\n"
+    '  "segment": "<segment name e.g. High-Value Professional, Young Saver, etc.>",\n'
+    '  "segment_description": "<1 sentence explaining why this segment>",\n'
+    '  "lifetime_value_tier": "<platinum|gold|silver|bronze>",\n'
+    '  "campaigns": [\n'
+    '    {"name": "<campaign name>", "channel": "<email|sms|in_app|branch>",\n'
+    '     "message": "<the actual personalized marketing message (2-3 sentences)>",\n'
+    '     "rationale": "<why this campaign for this customer>",\n'
+    '     "expected_conversion": "<high|medium|low>"}\n'
+    "  ],\n"
+    '  "cross_sell": ["<product/service opportunity>", ...],\n'
+    '  "next_best_action": "<single most impactful action to take with this customer>",\n'
+    '  "risk_of_churn": "<high|medium|low>",\n'
+    '  "churn_factors": ["<factor>", ...],\n'
+    '  "key_insights": ["<insight about this customer>", ...]\n'
+    "}\n\n"
+    "Generate 3-4 campaigns. Be specific with dollar amounts, product names, and personalization.\n"
+    "Reference the customer's actual data (income, credit score, transaction patterns, goals) in your reasoning."
+)
+
+
+@app.get("/api/customer-intelligence")
+async def api_customer_intelligence(
+    request: Request,
+    customer_id: str = Query(...),
+) -> dict[str, Any]:
+    """
+    Build a full Customer 360 view using MongoDB $lookup aggregation,
+    find matching products via $vectorSearch, and generate AI-powered
+    marketing intelligence using Claude.
+    """
+    db = request.app.state.db
+    voyage_client: voyageai.Client = request.app.state.voyage
+    llm_url: str = request.app.state.llm_url
+
+    cust_oid = parse_object_id(customer_id, "customer_id")
+
+    # ── Step 1: Customer 360 aggregation ($lookup) ──
+    t_agg = time.time()
+    pipeline_360: List[dict[str, Any]] = [
+        {"$match": {"_id": cust_oid}},
+        {
+            "$lookup": {
+                "from": "accounts",
+                "localField": "_id",
+                "foreignField": "customer_id",
+                "as": "accounts",
+            }
+        },
+        {
+            "$lookup": {
+                "from": "loan_applications",
+                "localField": "_id",
+                "foreignField": "customer_id",
+                "as": "loans",
+            }
+        },
+        {
+            "$lookup": {
+                "from": "transactions",
+                "localField": "_id",
+                "foreignField": "customer_id",
+                "pipeline": [{"$sort": {"date": -1}}, {"$limit": 30}],
+                "as": "recent_transactions",
+            }
+        },
+        {
+            "$lookup": {
+                "from": "kyc_documents",
+                "let": {"cid": {"$toString": "$_id"}},
+                "pipeline": [
+                    {"$match": {"$expr": {"$eq": ["$customer_id", "$$cid"]}}},
+                ],
+                "as": "kyc_docs",
+            }
+        },
+    ]
+    rows = list(db.customers.aggregate(pipeline_360))
+    agg_ms = round((time.time() - t_agg) * 1000)
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    customer_360 = rows[0]
+
+    # Compute derived metrics
+    accounts = customer_360.get("accounts", [])
+    loans = customer_360.get("loans", [])
+    txns = customer_360.get("recent_transactions", [])
+    total_balance = sum(float(a.get("balance", 0)) for a in accounts)
+    total_loan_amount = sum(float(l.get("loan_amount", 0)) for l in loans)
+    avg_txn = sum(float(t.get("amount", 0)) for t in txns) / max(len(txns), 1)
+    txn_categories = {}
+    for t in txns:
+        cat = t.get("category", "other")
+        txn_categories[cat] = txn_categories.get(cat, 0) + 1
+
+    profile_summary = {
+        "name": customer_360.get("full_name", ""),
+        "city": customer_360.get("city", ""),
+        "country": customer_360.get("country", ""),
+        "employment": customer_360.get("employment_type", ""),
+        "monthly_income": customer_360.get("monthly_income", 0),
+        "credit_score": customer_360.get("credit_score", 0),
+        "payment_history": customer_360.get("payment_history", ""),
+        "financial_goals": customer_360.get("financial_goals", ""),
+        "account_age_months": customer_360.get("account_age_months", 0),
+        "num_accounts": len(accounts),
+        "total_balance": round(total_balance, 2),
+        "num_loans": len(loans),
+        "total_loan_amount": round(total_loan_amount, 2),
+        "loan_statuses": [l.get("status") for l in loans],
+        "loan_purposes": [l.get("purpose") for l in loans],
+        "recent_txn_count": len(txns),
+        "avg_txn_amount": round(avg_txn, 2),
+        "top_txn_categories": dict(sorted(txn_categories.items(), key=lambda x: -x[1])[:5]),
+        "kyc_status": [d.get("verification_status") for d in customer_360.get("kyc_docs", [])],
+    }
+
+    # ── Step 2: Vector search for matching products ──
+    profile_text = _build_customer_profile_text(customer_360)
+    t_vs = time.time()
+    query_vector = get_query_embedding(voyage_client, profile_text)
+    embed_ms = round((time.time() - t_vs) * 1000)
+
+    vs_pipeline: List[dict[str, Any]] = [
+        {
+            "$vectorSearch": {
+                "index": PRODUCT_VECTOR_INDEX,
+                "path": EMBEDDING_FIELD,
+                "queryVector": query_vector,
+                "numCandidates": 100,
+                "limit": 5,
+            }
+        },
+        {"$addFields": {"match_score": {"$meta": "vectorSearchScore"}}},
+        {"$project": {EMBEDDING_FIELD: 0}},
+    ]
+    t_vs2 = time.time()
+    matched_products = list(db.bank_products.aggregate(vs_pipeline))
+    vs_ms = round((time.time() - t_vs2) * 1000)
+
+    product_summaries = [
+        {"name": p.get("name", ""), "description": p.get("description", "")[:200], "score": round(float(p.get("match_score", 0)), 4)}
+        for p in matched_products
+    ]
+
+    # ── Step 3: Claude generates marketing intelligence ──
+    user_content = (
+        f"Customer profile:\n{json.dumps(profile_summary, indent=2, default=str)}\n\n"
+        f"Vector-search matched products (ranked by relevance):\n{json.dumps(product_summaries, indent=2)}\n\n"
+        "Generate comprehensive marketing intelligence for this customer."
+    )
+    messages = [
+        {"role": "system", "content": CUSTOMER_INTEL_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+    t_llm = time.time()
+    try:
+        resp = requests.post(llm_url, json={"messages": messages}, timeout=60)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+    llm_ms = round((time.time() - t_llm) * 1000)
+
+    llm_data = resp.json()
+    raw_answer = (llm_data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
+    usage = llm_data.get("usage", {})
+
+    intel: dict[str, Any] = {}
+    try:
+        intel = json.loads(raw_answer)
+    except json.JSONDecodeError:
+        cleaned = raw_answer
+        if "```json" in cleaned:
+            cleaned = cleaned.split("```json", 1)[1].rsplit("```", 1)[0]
+        elif "```" in cleaned:
+            cleaned = cleaned.split("```", 1)[1].rsplit("```", 1)[0]
+        try:
+            intel = json.loads(cleaned.strip())
+        except json.JSONDecodeError:
+            intel = {"error": "Failed to parse AI response", "raw": raw_answer[:2000]}
+
+    return _serialize({
+        "customer": profile_summary,
+        "matched_products": product_summaries,
+        "intelligence": intel,
+        "pipeline": {
+            "aggregation_ms": agg_ms,
+            "embed_ms": embed_ms,
+            "vector_search_ms": vs_ms,
+            "llm_ms": llm_ms,
+            "usage": usage,
+            "stages": [
+                "$match → $lookup(accounts) → $lookup(loans) → $lookup(transactions) → $lookup(kyc)",
+                f"$vectorSearch(product_vector_index, {len(query_vector)}-dim query)",
+                "Claude: profile + products → marketing intelligence",
+            ],
+        },
+    })
+
+
+# ──────────────────────────────────────────────────────────
 # Analytics Dashboard: MongoDB aggregation pipelines
 # ──────────────────────────────────────────────────────────
 
