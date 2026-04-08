@@ -486,7 +486,7 @@ tr:hover{background:var(--surface)}
     <div class="status-dot"></div>
     Atlas Bank Assistant
     <label style="margin-left:auto;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;opacity:.85">
-      <input type="checkbox" id="pipelineToggle" style="accent-color:var(--accent)"> Show AI Pipeline
+      <input type="checkbox" id="pipelineToggle" checked style="accent-color:var(--accent)"> Show AI Pipeline
     </label>
   </div>
   <div class="chat-messages" id="chatMessages">
@@ -767,9 +767,12 @@ function toggleChat() {
 }
 document.addEventListener('DOMContentLoaded', () => {
   const tog = $('pipelineToggle');
-  if (tog) tog.addEventListener('change', () => {
-    $('chatPanel').classList.toggle('pipeline-on', tog.checked);
-  });
+  if (tog) {
+    if (tog.checked) $('chatPanel').classList.add('pipeline-on');
+    tog.addEventListener('change', () => {
+      $('chatPanel').classList.toggle('pipeline-on', tog.checked);
+    });
+  }
 });
 
 function appendMsg(text, role, sourcesHtml) {
