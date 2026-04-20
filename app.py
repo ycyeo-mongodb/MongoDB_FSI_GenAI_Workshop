@@ -18,6 +18,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 import requests
@@ -256,6 +257,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="GenAI for Financial Services Workshop", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://localhost(:\d+)?",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -504,6 +512,8 @@ async def api_kyc_check(
 
     query_vector = get_query_embedding(voyage_client, description)
 
+    # Exclude current doc with $match after $vectorSearch — Atlas does not allow
+    # filter on _id unless _id is declared as a filter field on the search index.
     pipeline: List[dict[str, Any]] = [
         {
             "$vectorSearch": {
@@ -511,15 +521,26 @@ async def api_kyc_check(
                 "path": KYC_EMBEDDING_FIELD,
                 "queryVector": query_vector,
                 "numCandidates": 150,
-                "limit": 15,
-                "filter": {"_id": {"$ne": doc_oid}},
+                "limit": 20,
             }
         },
         {"$addFields": {"similarity": {"$meta": "vectorSearchScore"}}},
+        {"$match": {"_id": {"$ne": doc_oid}}},
         {"$project": {KYC_EMBEDDING_FIELD: 0}},
     ]
 
-    similar = list(kyc_coll.aggregate(pipeline))
+    try:
+        similar = list(kyc_coll.aggregate(pipeline))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Atlas Vector Search failed ({exc}). "
+                f'Ensure Atlas Search index "{KYC_VECTOR_INDEX}" exists on '
+                f'banking.kyc_documents with vector field "{KYC_EMBEDDING_FIELD}" '
+                f"(see README / setup_workshop.py / 07_load_kyc_data.py)."
+            ),
+        ) from exc
     duplicates: List[dict[str, Any]] = []
     for s in similar:
         sim = s.get("similarity")

@@ -1760,8 +1760,20 @@ async function verifyKYC() {
   btn.disabled = true; sp.classList.remove('hidden');
   try {
     const res = await fetch('/api/kyc-check?document_id=' + encodeURIComponent(did));
-    const d = await res.json();
-    if (d.detail) { alert(d.detail); return; }
+    const raw = await res.text();
+    let d;
+    try {
+      d = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      alert('KYC check failed (HTTP ' + res.status + '). Server did not return JSON:\n' + raw.slice(0, 400));
+      return;
+    }
+    if (!res.ok) {
+      let err = d.detail;
+      if (Array.isArray(err)) err = err.map(e => (e.msg || e.type || '') + (e.loc ? ' ' + JSON.stringify(e.loc) : '')).filter(Boolean).join('\n');
+      alert(err || ('Request failed (HTTP ' + res.status + ')'));
+      return;
+    }
 
     const statusBadge = $('kycStatusBadge');
     const hasIssues = d.risk_flags && d.risk_flags.length > 0;
@@ -1842,7 +1854,9 @@ async function verifyKYC() {
       $('kycDuplicatesSection').classList.remove('hidden');
     }
 
-    $('kycResult').classList.remove('hidden');
+    const resultEl = $('kycResult');
+    resultEl.classList.remove('hidden');
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { alert('Error: ' + e.message); }
   finally { btn.disabled = false; sp.classList.add('hidden'); }
 }
